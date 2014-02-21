@@ -3,7 +3,6 @@ package main
 
 import (
 	"flag"
-	"github.com/duego/cryriver/bridge"
 	"github.com/duego/cryriver/elasticsearch"
 	"github.com/duego/cryriver/mongodb"
 	"log"
@@ -30,19 +29,27 @@ func main() {
 	interrupt := make(chan os.Signal)
 	signal.Notify(interrupt, os.Interrupt, syscall.SIGTERM)
 
-	transformations := []bridge.Transformer{
-		&bridge.NopTransformation{},
-	}
-
+	mapperc := make(chan elasticsearch.Mapper)
 	esDone := make(chan bool)
 	go func() {
-		elasticsearch.Slurp(*esServer, *esIndex, opc, transformations)
+		elasticsearch.Slurp(*esServer, mapperc)
 		close(esDone)
 	}()
 
+	var (
+		mapper         *mongodb.EsMapper
+		mapperdelivery chan elasticsearch.Mapper
+	)
 tail:
 	for {
 		select {
+		case op := <-opc:
+			mapper = &mongodb.EsMapper{op, *esIndex}
+			mapperdelivery = mapperc
+		case mapperdelivery <- mapper:
+			// Forward mappers to elasticsearch based on operations from mongodb tail
+			// Block the channel until new deliveries are available
+			mapperdelivery = nil
 		case <-esDone:
 			log.Println("ES slurper returned")
 			break tail
@@ -52,6 +59,7 @@ tail:
 		}
 	}
 
+	// MongoDB tailer shutdown
 	errc := make(chan error)
 	closingMongo <- errc
 	if err := <-errc; err != nil {
@@ -59,6 +67,9 @@ tail:
 	} else {
 		log.Println("No errors occured in mongo tail")
 	}
+
+	// Elasticsearch indexer shutdown
+	close(mapperc)
 	log.Println("Waiting for ES to return")
 	<-esDone
 	log.Println("Bye!")
