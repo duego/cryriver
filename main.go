@@ -37,19 +37,22 @@ func main() {
 	}()
 
 	var (
-		mapper         *mongodb.EsMapper
-		mapperdelivery chan elasticsearch.Mapper
+		mapper            *mongodb.EsMapper
+		mapperDelivery    chan elasticsearch.Mapper
+		operationDelivery chan *mongodb.Operation = opc
 	)
 tail:
 	for {
 		select {
-		case op := <-opc:
+		case op := <-operationDelivery:
 			mapper = &mongodb.EsMapper{op, *esIndex}
-			mapperdelivery = mapperc
-		case mapperdelivery <- mapper:
+			mapperDelivery = mapperc
+			operationDelivery = nil
+		case mapperDelivery <- mapper:
 			// Forward mappers to elasticsearch based on operations from mongodb tail
 			// Block the channel until new deliveries are available
-			mapperdelivery = nil
+			mapperDelivery = nil
+			operationDelivery = opc
 		case <-esDone:
 			log.Println("ES slurper returned")
 			break tail
