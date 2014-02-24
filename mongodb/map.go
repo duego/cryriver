@@ -4,17 +4,38 @@ import (
 	"errors"
 	"fmt"
 	"github.com/duego/cryriver/elasticsearch"
+	"labix.org/v2/mgo/bson"
 )
+
+// Manipulator is used for changing documents in specific ways. These can get added to
+// the EsMapper to have changes applied on all mapped operations.
+type Manipulator interface {
+	Manipulate(doc *bson.M) error
+}
 
 // EsMapper maps mongodb operations to elasticsearch operations.
 // XXX: Should it also apply transformer?
 type EsMapper struct {
-	*Operation
-	Index string
+	Index        string
+	Manipulators []Manipulator
 }
 
-func (m *EsMapper) EsMap() (elasticsearch.Operation, error) {
-	var op elasticsearch.Operation
+func NewEsMapper(index string) *EsMapper {
+	return &EsMapper{index, DefaultManipulators}
+}
+
+func (e *EsMapper) AddManipulator(manip Manipulator) error {
+	for _, e := range e.Manipulators {
+		if e == manip {
+			return errors.New("Manipulator has already been added")
+		}
+	}
+	e.Manipulators = append(e.Manipulators, manip)
+	return nil
+}
+
+func (e *EsMapper) EsMap(m *Operation) (*elasticsearch.Operation, error) {
+	op := new(elasticsearch.Operation)
 	id, err := m.Id()
 	if err != nil {
 		return op, errors.New(fmt.Sprint("Could not find an id in", m))
@@ -27,10 +48,10 @@ func (m *EsMapper) EsMap() (elasticsearch.Operation, error) {
 		if err != nil {
 			return op, err
 		}
-		return elasticsearch.Operation{
+		op = &elasticsearch.Operation{
 			Id:        id,
 			Timestamp: m.Timestamp.Time(),
-			Index:     m.Index,
+			Index:     e.Index,
 			Type:      "users",
 			TTL:       "",
 			Op:        elasticsearch.Update,
@@ -40,18 +61,32 @@ func (m *EsMapper) EsMap() (elasticsearch.Operation, error) {
 				// doc_as_upsert makes sure we will create additional fields should they show up.
 				"doc_as_upsert": true,
 			},
-		}, nil
+		}
 	case Insert:
-		return elasticsearch.Operation{
+		op = &elasticsearch.Operation{
 			Id:        id,
 			Timestamp: m.Timestamp.Time(),
-			Index:     m.Index,
+			Index:     e.Index,
 			Type:      "users",
 			TTL:       "",
 			Op:        elasticsearch.Index,
 			Document:  elasticsearch.D(m.Object),
-		}, nil
+		}
 	default:
 		return op, errors.New(fmt.Sprint("Operation of type", m.Op, "is not supported yet"))
 	}
+
+	// Run the document through the manipulators to make it look like we want it to before it hits ES
+	doc := bson.M(op.Document)
+	for _, manip := range e.Manipulators {
+		err = manip.Manipulate(&doc)
+		if err != nil {
+			return op, err
+		}
+	}
+	// Silly conversion from bson.M to elasticsearch.D, they are really the same structure
+	op.Document = elasticsearch.D(doc)
+	return op, nil
 }
+
+var DefaultManipulators = make([]Manipulator, 0, 100)

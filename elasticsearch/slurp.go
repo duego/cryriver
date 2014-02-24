@@ -35,7 +35,7 @@ type Operation struct {
 
 // Slurp attaches batch indexer to specified server and feeds mapped operations into it,
 // closing mapc will stop the indexer.
-func Slurp(server string, mapc chan Mapper) {
+func Slurp(server string, esc chan *Operation) {
 	// Set the Elasticsearch Host to Connect to.
 	// TODO: Followup on support for multiple servers, for now we can specify different servers
 	// for each process on each mongo shard.
@@ -61,19 +61,15 @@ func Slurp(server string, mapc chan Mapper) {
 	}()
 
 	// Loop all incoming operations and send them to the bulk indexer.
-	for op := range mapc {
-		esOp, err := op.EsMap()
-		if err != nil {
-			log.Println(err)
-			continue
-		}
-		switch esOp.Op {
+	for es := range esc {
+		switch es.Op {
 		case Index:
-			indexer.Index(esOp.Index, esOp.Type, esOp.Id, esOp.TTL, esOp.Timestamp, esOp.Document)
+			indexer.Index(es.Index, es.Type, es.Id, es.TTL, es.Timestamp, es.Document)
 		case Update:
-			indexer.Update(esOp.Index, esOp.Type, esOp.Id, esOp.TTL, esOp.Timestamp, esOp.Document)
+			indexer.Update(es.Index, es.Type, es.Id, es.TTL, es.Timestamp, es.Document)
 		}
 	}
+	log.Println("Slurper closing down")
 	done <- true
 	// Make sure we really flushed all pending things before returning.
 	indexer.Flush()
