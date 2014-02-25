@@ -59,7 +59,7 @@ tail:
 				break tail
 			}
 			if esOp, err = mapper.EsMap(op); err != nil {
-				log.Println(err)
+				log.Println(err, esOp)
 			} else {
 				// Nil switch to block mongo delivery until elasticsearch delivery is done
 				mongoDelivery = nil

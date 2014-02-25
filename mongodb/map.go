@@ -14,7 +14,6 @@ type Manipulator interface {
 }
 
 // EsMapper maps mongodb operations to elasticsearch operations.
-// XXX: Should it also apply transformer?
 type EsMapper struct {
 	Index        string
 	Manipulators []Manipulator
@@ -22,16 +21,6 @@ type EsMapper struct {
 
 func NewEsMapper(index string) *EsMapper {
 	return &EsMapper{index, DefaultManipulators}
-}
-
-func (e *EsMapper) AddManipulator(manip Manipulator) error {
-	for _, e := range e.Manipulators {
-		if e == manip {
-			return errors.New("Manipulator has already been added")
-		}
-	}
-	e.Manipulators = append(e.Manipulators, manip)
-	return nil
 }
 
 func (e *EsMapper) EsMap(m *Operation) (*elasticsearch.Operation, error) {
