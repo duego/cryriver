@@ -25,7 +25,7 @@ func bsonToOperation(t *testing.T, v *bson.M) *Operation {
 
 func TestDeleteOperation(t *testing.T) {
 	op := bsonToOperation(t, &bson.M{
-		"ts": bson.MongoTimestamp(1390928224),
+		"ts": bson.MongoTimestamp(5982836443431567364),
 		"h":  int64(2778471229732698240),
 		"v":  2,
 		"op": "d",
@@ -49,14 +49,14 @@ func TestDeleteOperation(t *testing.T) {
 	if ns := op.Namespace; ns != "test_api.dashboards" {
 		t.Error("Invalid namespace", ns)
 	}
-	if ts, valid := *op.Timestamp.Time(), time.Date(2014, time.January, 28, 16, 57, 04, 0, time.UTC); ts != valid {
+	if ts, valid := *op.Timestamp.Time(), time.Date(2014, time.February, 21, 13, 01, 00, 0, time.UTC); ts != valid {
 		t.Error("Invalid time", ts, "Expected", valid)
 	}
 }
 
 func TestUpdateOperation(t *testing.T) {
 	op := bsonToOperation(t, &bson.M{
-		"ts": bson.MongoTimestamp(1390926707),
+		"ts": bson.MongoTimestamp(5973982510084789348),
 		"h":  int64(-7293803671238204358),
 		"v":  2,
 		"op": "u",
@@ -86,7 +86,7 @@ func TestUpdateOperation(t *testing.T) {
 	if ns := op.Namespace; ns != "test_api.users" {
 		t.Error("Invalid namespace", ns)
 	}
-	if ts, valid := *op.Timestamp.Time(), time.Date(2014, time.January, 28, 16, 31, 47, 0, time.UTC); ts != valid {
+	if ts, valid := *op.Timestamp.Time(), time.Date(2014, time.January, 28, 16, 23, 13, 0, time.UTC); ts != valid {
 		t.Error("Invalid time", ts, "Expected", valid)
 	}
 	if _, ok := op.Object["$set"]; !ok {
@@ -95,7 +95,7 @@ func TestUpdateOperation(t *testing.T) {
 	if c, err := op.Changes(); err != nil {
 		t.Error(err)
 	} else {
-		if c.(bson.M)["photo_tally"].(bson.M)["total"].(int) != 1 {
+		if c["photo_tally"].(bson.M)["total"].(int) != 1 {
 			t.Error("Incorrect changeset:", c)
 		}
 	}
@@ -103,7 +103,8 @@ func TestUpdateOperation(t *testing.T) {
 
 func TestInsertOperation(t *testing.T) {
 	op := bsonToOperation(t, &bson.M{
-		"ts": bson.MongoTimestamp(1390926193),
+		//  2014-01-28 16:23:1q3 +0000 UTC
+		"ts": bson.MongoTimestamp(5973982510084788956),
 		"h":  int64(-9122761770815979503),
 		"v":  2,
 		"op": "i",
@@ -139,7 +140,7 @@ func TestInsertOperation(t *testing.T) {
 	if c, err := op.Changes(); err != nil {
 		t.Error(err)
 	} else {
-		if c.(bson.M)["_cls"].(string) != "Conversation" {
+		if c["_cls"].(string) != "Conversation" {
 			t.Error("Incorrect changeset:", c)
 		}
 	}

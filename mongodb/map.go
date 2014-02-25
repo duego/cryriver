@@ -29,14 +29,20 @@ func (e *EsMapper) EsMap(m *Operation) (*elasticsearch.Operation, error) {
 	if err != nil {
 		return op, errors.New(fmt.Sprint("Could not find an id in", m))
 	}
+	changes, err := m.Changes()
+	if err != nil {
+		return op, err
+	}
+	// Run the document through the manipulators to make it look like we want it to before it hits ES
+	for _, manip := range e.Manipulators {
+		if err := manip.Manipulate(&changes); err != nil {
+			return op, err
+		}
+	}
 	switch m.Op {
 	// FIXME: Updates might be full objects (not $set) where we want to treat it as with Inserts
 	// to make sure removed fields don't stick along.
 	case Update:
-		changes, err := m.Changes()
-		if err != nil {
-			return op, err
-		}
 		op = &elasticsearch.Operation{
 			Id:        id,
 			Timestamp: m.Timestamp.Time(),
@@ -59,22 +65,12 @@ func (e *EsMapper) EsMap(m *Operation) (*elasticsearch.Operation, error) {
 			Type:      "users",
 			TTL:       "",
 			Op:        elasticsearch.Index,
-			Document:  elasticsearch.D(m.Object),
+			Document:  elasticsearch.D(changes),
 		}
 	default:
 		return op, errors.New(fmt.Sprint("Operation of type", m.Op, "is not supported yet"))
 	}
 
-	// Run the document through the manipulators to make it look like we want it to before it hits ES
-	doc := bson.M(op.Document)
-	for _, manip := range e.Manipulators {
-		err = manip.Manipulate(&doc)
-		if err != nil {
-			return op, err
-		}
-	}
-	// Silly conversion from bson.M to elasticsearch.D, they are really the same structure
-	op.Document = elasticsearch.D(doc)
 	return op, nil
 }
 

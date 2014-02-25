@@ -18,7 +18,8 @@ var (
 	esServer    = flag.String("es", "localhost", "Elasticsearch server to index to")
 	esIndex     = flag.String("index", "testing", "Elasticsearch index to use")
 	ns          = flag.String("ns", "api.users", "The namespace to tail on")
-	pprofAddr   = flag.String("pprof", "127.0.0.1:5000", "Which address to listen on for profiling")
+	debugAddr   = flag.String(
+		"debug", "127.0.0.1:5000", "Which address to listen on for debug, empty for no debug")
 )
 
 func main() {
@@ -26,12 +27,14 @@ func main() {
 	log.SetFlags(log.Lshortfile | log.LstdFlags)
 
 	go func() {
-		log.Println(http.ListenAndServe(*pprofAddr, nil))
+		if *debugAddr != "" {
+			log.Println(http.ListenAndServe(*debugAddr, nil))
+		}
 	}()
 
 	mongoc := make(chan *mongodb.Operation)
 	closingMongo := make(chan chan error)
-	go mongodb.Tail(*mongoServer, *ns, mongoc, closingMongo)
+	go mongodb.Tail(*mongoServer, *ns, nil, mongoc, closingMongo)
 
 	interrupt := make(chan os.Signal)
 	signal.Notify(interrupt, os.Interrupt, syscall.SIGTERM)
@@ -45,6 +48,7 @@ func main() {
 
 	mapper := mongodb.NewEsMapper(*esIndex)
 	var (
+		mOp           *mongodb.Operation
 		esOp          *elasticsearch.Operation
 		esDelivery    chan *elasticsearch.Operation = nil
 		mongoDelivery chan *mongodb.Operation       = mongoc
@@ -54,11 +58,11 @@ func main() {
 tail:
 	for {
 		select {
-		case op := <-mongoDelivery:
-			if op == nil {
+		case mOp = <-mongoDelivery:
+			if mOp == nil {
 				break tail
 			}
-			if esOp, err = mapper.EsMap(op); err != nil {
+			if esOp, err = mapper.EsMap(mOp); err != nil {
 				log.Println(err, esOp)
 			} else {
 				// Nil switch to block mongo delivery until elasticsearch delivery is done
@@ -66,6 +70,7 @@ tail:
 				esDelivery = esc
 			}
 		case esDelivery <- esOp:
+			lastEsSeen = mOp.Timestamp
 			// Forward mappers to elasticsearch based on operations from mongodb tail
 			// Block the channel until new deliveries are available
 			esDelivery = nil
