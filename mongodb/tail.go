@@ -21,12 +21,13 @@ func Tail(server, namespace string, lastTs *Timestamp, opc chan<- *Operation, cl
 	col := session.DB("local").C("oplog.rs")
 	result := new(Operation)
 
+	query := bson.M{"ns": namespace}
 	if lastTs != nil {
-		log.Println("TODO: Resume from timestamp", *lastTs)
+		log.Println("Resuming from timestamp:", *lastTs)
+		query["ts"] = bson.M{"$gt": *lastTs}
 	}
 	// Start tailing, sorted by forward natural order by default in capped collections.
-	// TODO: Provide what id/timestamp to start from.
-	iter := col.Find(bson.M{"ns": namespace}).Tail(-1)
+	iter := col.Find(query).Tail(-1)
 	go func() {
 		for iter.Next(result) {
 			opc <- result

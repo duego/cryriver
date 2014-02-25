@@ -2,7 +2,10 @@ package mongodb
 
 import (
 	"fmt"
+	"io"
+	"io/ioutil"
 	"labix.org/v2/mgo/bson"
+	"strconv"
 	"time"
 )
 
@@ -23,6 +26,40 @@ func (t *Timestamp) Ordinal() int32 {
 	return int32(*t << 32)
 }
 
+// GetBSON helps bson marshal understand that we're really a MongoTimestamp
+func (t Timestamp) GetBSON() (interface{}, error) {
+	return bson.MongoTimestamp(t), nil
+}
+
 func (t Timestamp) String() string {
 	return fmt.Sprintf("%s Ordinal: %d", t.Time(), t.Ordinal())
+}
+
+// Save writes the timestamp as a string using io.Writer.
+func (t Timestamp) Save(w io.Writer) error {
+	ts := []byte(strconv.FormatInt(int64(t), 10))
+
+	for written := 0; written < len(ts); {
+		n, err := w.Write(ts)
+		if err != nil {
+			return err
+		}
+		written += n
+	}
+	return nil
+}
+
+// Load sets the timestamp provided by an io.Reader.
+func (t *Timestamp) Load(r io.Reader) error {
+	b, err := ioutil.ReadAll(r)
+	if err != nil {
+		return err
+	}
+
+	i, err := strconv.Atoi(string(b))
+	if err != nil {
+		return err
+	}
+	*t = Timestamp(i)
+	return nil
 }
