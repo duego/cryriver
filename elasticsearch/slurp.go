@@ -39,6 +39,7 @@ func Slurp(server string, esc chan *Operation) {
 	// Set the Elasticsearch Host to Connect to.
 	// TODO: Followup on support for multiple servers, for now we can specify different servers
 	// for each process on each mongo shard.
+	log.Println("Connecting to", server)
 	api.Domain = server
 	api.Port = "9200"
 

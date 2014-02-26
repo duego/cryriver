@@ -63,3 +63,20 @@ func (t *Timestamp) Load(r io.Reader) error {
 	*t = Timestamp(i)
 	return nil
 }
+
+// Optime is marked "internal" by 10gen and is also broken as it reports the wrong bson type.
+// Work around this by providing the interface to unmarshal it properly.
+type optime Timestamp
+
+func (o *optime) SetBSON(raw bson.Raw) error {
+	b := raw.Data
+	*o = optime((uint64(b[0]) << 0) |
+		(uint64(b[1]) << 8) |
+		(uint64(b[2]) << 16) |
+		(uint64(b[3]) << 24) |
+		(uint64(b[4]) << 32) |
+		(uint64(b[5]) << 40) |
+		(uint64(b[6]) << 48) |
+		(uint64(b[7]) << 56))
+	return nil
+}

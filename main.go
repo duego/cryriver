@@ -15,7 +15,11 @@ import (
 )
 
 var (
-	mongoServer = flag.String("mongo", "localhost", "Specific server to tail")
+	mongoServer  = flag.String("mongo", "localhost", "Specific server to tail")
+	mongoInitial = flag.Bool(
+		"initial",
+		false,
+		"True if we want to do initial sync from the full collection, otherwise resume reading oplog")
 	esServer    = flag.String("es", "localhost", "Elasticsearch server to index to")
 	esIndex     = flag.String("index", "testing", "Elasticsearch index to use")
 	optimeStore = flag.String(
@@ -41,7 +45,7 @@ func main() {
 
 	mongoc := make(chan *mongodb.Operation)
 	closingMongo := make(chan chan error)
-	go mongodb.Tail(*mongoServer, *ns, lastEsSeen, mongoc, closingMongo)
+	go mongodb.Tail(*mongoServer, *ns, *mongoInitial, lastEsSeen, mongoc, closingMongo)
 
 	esc := make(chan *elasticsearch.Operation)
 	esDone := make(chan bool)
