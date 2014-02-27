@@ -2,9 +2,9 @@
 package elasticsearch
 
 import (
-	"github.com/mattbaird/elastigo/api"
-	"github.com/mattbaird/elastigo/core"
+	"fmt"
 	"log"
+	"net/http"
 	"time"
 )
 
@@ -25,53 +25,112 @@ type Mapper interface {
 
 type Operation struct {
 	Id        string
-	Timestamp *time.Time
 	Index     string
 	Type      string
 	TTL       string
+	Timestamp *time.Time
 	Op        IndexerOperation
 	Document  D
 }
 
+type Timestamper interface {
+	Time() *time.Time
+}
+
+type Identifier interface {
+	Index() (string, error)
+	Type() (string, error)
+	Id() (string, error)
+}
+
+type Documenter interface {
+	Document() (map[string]interface{}, error)
+}
+
+type Operationer interface {
+	// What action to perform, index or update
+	Action() (string, error)
+}
+
+type Transaction interface {
+	Operationer
+	Documenter
+	Identifier
+	Timestamper
+}
+
+type EsClient struct {
+	*http.Client
+	url string
+}
+
+func NewEsClient(url string, maxConn int) *EsClient {
+	tr := &http.Transport{
+		MaxIdleConnsPerHost: maxConn,
+	}
+	return &EsClient{
+		&http.Client{Transport: tr},
+		url,
+	}
+}
+
+func (c EsClient) SendBulk(b *BulkBody) error {
+	b.Done()
+	log.Println("Send that buffer!", string(b.Bytes()))
+	resp, err := c.Post(c.url, "application/x-www-form-urlencoded", b)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	b.Reset()
+	// TODO: Catch returned ES errors here
+	log.Println(resp)
+	return nil
+}
+
 // Slurp attaches batch indexer to specified server and feeds mapped operations into it,
 // closing mapc will stop the indexer.
-func Slurp(server string, esc chan *Operation) {
-	// Set the Elasticsearch Host to Connect to.
-	// TODO: Followup on support for multiple servers, for now we can specify different servers
-	// for each process on each mongo shard.
-	log.Println("Connecting to", server)
-	api.Domain = server
-	api.Port = "9200"
+func Slurp(server string, esc chan Transaction) {
+	defer log.Println("Slurper stopped")
 
-	// Bulk Indexing, start with settings similar to the current river configuration.
-	indexer := core.NewBulkIndexerErrors(200, 60)
-	indexer.BulkMaxBuffer = 10485760
-	indexer.BulkMaxDocs = 6000
-	done := make(chan bool)
-	indexer.Run(done)
-	// Clean up on return as the indexer doesn't seem to do it by itself.
-	defer func() { indexer.ErrorChannel = nil }()
-	defer close(indexer.ErrorChannel)
-
-	go func() {
-		for errBuf := range indexer.ErrorChannel {
-			// just blissfully print errors forever.
-			log.Println(errBuf.Err)
-		}
-		log.Println("Error channel has been closed")
-	}()
+	client := NewEsClient(fmt.Sprintf("%s/_bulk", server), 10)
+	bulkBuf := NewBulkBody(MB)
+	bulkTicker := time.NewTicker(time.Second)
 
 	// Loop all incoming operations and send them to the bulk indexer.
-	for es := range esc {
-		switch es.Op {
-		case Index:
-			indexer.Index(es.Index, es.Type, es.Id, es.TTL, es.Timestamp, es.Document)
-		case Update:
-			indexer.Update(es.Index, es.Type, es.Id, es.TTL, es.Timestamp, es.Document)
+	for {
+		select {
+		case op := <-esc:
+			if op == nil {
+				if bulkBuf.Len() > 0 {
+					if err := client.SendBulk(bulkBuf); err != nil {
+						log.Println(err)
+					}
+				}
+				return
+			}
+		retry:
+			err := bulkBuf.Add(op)
+			switch err {
+			case nil:
+			case BulkBodyFull:
+				log.Println("Bulk body full!")
+				// FIXME: What to do here if we get an error? It would be a blocking loop
+				if err := client.SendBulk(bulkBuf); err != nil {
+					log.Println(err)
+				}
+				goto retry
+			default:
+				log.Println(err)
+			}
+		case <-bulkTicker.C:
+			if bulkBuf.Len() > 0 {
+				log.Println("It is time!")
+				if err := client.SendBulk(bulkBuf); err != nil {
+					log.Println(err)
+				}
+			}
 		}
 	}
-	log.Println("Slurper closing down")
-	done <- true
-	// Make sure we really flushed all pending things before returning.
-	indexer.Flush()
 }

@@ -10,6 +10,7 @@ import (
 	_ "net/http/pprof"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -20,7 +21,7 @@ var (
 		"initial",
 		false,
 		"True if we want to do initial sync from the full collection, otherwise resume reading oplog")
-	esServer    = flag.String("es", "localhost", "Elasticsearch server to index to")
+	esServer    = flag.String("es", "http://localhost:9200", "Elasticsearch server to index to")
 	esIndex     = flag.String("index", "testing", "Elasticsearch index to use")
 	optimeStore = flag.String(
 		"db", "/tmp/cryriver.db", "What file to save progress on for oplog resumes")
@@ -47,27 +48,28 @@ func main() {
 	closingMongo := make(chan chan error)
 	go mongodb.Tail(*mongoServer, *ns, *mongoInitial, lastEsSeen, mongoc, closingMongo)
 
-	esc := make(chan *elasticsearch.Operation)
+	esc := make(chan elasticsearch.Transaction)
 	esDone := make(chan bool)
 	go func() {
 		elasticsearch.Slurp(*esServer, esc)
 		close(esDone)
 	}()
 
+	indexes := map[string]string{
+		strings.Split(*ns, ".")[0]: *esIndex,
+	}
 	lastEsSeenTimer := time.NewTicker(time.Second)
-	mapper := mongodb.NewEsMapper(*esIndex)
 	var (
 		// Operations ES has seen
 		seenMongoOp *mongodb.Operation
 		// Last operation from mongo tailer
 		mongoOp *mongodb.Operation
 		// Elasticsearch operations mapped from mongo operations
-		esOp *elasticsearch.Operation
+		esOp elasticsearch.Transaction
 		// Nil switched channel for enabling ES delivery once a mongo mapped operation is available
-		esDelivery chan *elasticsearch.Operation = nil
+		esDelivery chan elasticsearch.Transaction = nil
 		// Nil switched channel for enabling more mongo operations once ES operation has been delivered
 		mongoDelivery chan *mongodb.Operation = mongoc
-		err           error
 	)
 
 tail:
@@ -78,16 +80,17 @@ tail:
 			if mongoOp == nil {
 				break tail
 			}
-			if esOp, err = mapper.EsMap(mongoOp); err != nil {
-				log.Println(err, esOp)
-			} else {
-				// Nil switch to block mongo delivery until elasticsearch delivery is done
-				mongoDelivery = nil
-				esDelivery = esc
+			esOp = &mongodb.EsOperation{
+				Operation:    mongoOp,
+				Manipulators: mongodb.DefaultManipulators,
+				IndexMap:     indexes,
 			}
+			// Nil switch to block mongo delivery until elasticsearch delivery is done
+			mongoDelivery = nil
+			esDelivery = esc
 		// Deliver mapped operation to ES
 		case esDelivery <- esOp:
-			// Forward mappers to elasticsearch based on operations from mongodb tail
+			// Forward to elasticsearch based on operations from mongodb tail
 			// Block the channel until new deliveries are available
 			esDelivery = nil
 			mongoDelivery = mongoc

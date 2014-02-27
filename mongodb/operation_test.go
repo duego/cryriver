@@ -31,7 +31,7 @@ func TestDeleteOperation(t *testing.T) {
 		"op": "d",
 		"ns": "test_api.dashboards",
 		"b":  true,
-		"o": bson.M{
+		"o": map[string]interface{}{
 			"_id": bson.ObjectIdHex("52e7e160f4eb2740dda12844"),
 		},
 	})
@@ -61,12 +61,12 @@ func TestUpdateOperation(t *testing.T) {
 		"v":  2,
 		"op": "u",
 		"ns": "test_api.users",
-		"o2": bson.M{
+		"o2": map[string]interface{}{
 			"_id": bson.ObjectIdHex("52e7db73f4eb27371874b289"),
 		},
 		"o": bson.M{
-			"$set": bson.M{
-				"photo_tally": bson.M{
+			"$set": map[string]interface{}{
+				"photo_tally": map[string]interface{}{
 					"total": 1,
 				},
 			},
@@ -92,7 +92,7 @@ func TestUpdateOperation(t *testing.T) {
 	if _, ok := op.Object["$set"]; !ok {
 		t.Error("Expected $set to be available")
 	}
-	if c, err := op.Changes(); err != nil {
+	if c, err := (&EsOperation{Operation: op}).Document(); err != nil {
 		t.Error(err)
 	} else {
 		if c["photo_tally"].(bson.M)["total"].(int) != 1 {
@@ -109,7 +109,7 @@ func TestInsertOperation(t *testing.T) {
 		"v":  2,
 		"op": "i",
 		"ns": "api.conversations",
-		"o": bson.M{
+		"o": map[string]interface{}{
 			"_cls":       "Conversation",
 			"_id":        bson.ObjectIdHex("50eadae392cd864e50cd0dbc"),
 			"created_at": time.Date(2013, time.January, 07, 14, 25, 39, 941e6, time.UTC),
@@ -137,7 +137,7 @@ func TestInsertOperation(t *testing.T) {
 			t.Error("Invalid created at time", createdAt)
 		}
 	}
-	if c, err := op.Changes(); err != nil {
+	if c, err := (&EsOperation{Operation: op}).Document(); err != nil {
 		t.Error(err)
 	} else {
 		if c["_cls"].(string) != "Conversation" {

@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"labix.org/v2/mgo/bson"
+	"strings"
+	"time"
 )
 
 // OplogOperation defines different kinds of operations an oplog entry can have.
@@ -53,24 +55,100 @@ func (op *Operation) Id() (string, error) {
 	return bid.Hex(), nil
 }
 
-// Changes returns the changed document for Insert or Update.
-func (op *Operation) Changes() (bson.M, error) {
-	var changes bson.M
+// Implements the rest of elasticsearch interface for easy export of Operation.
+type EsOperation struct {
+	*Operation
+	IndexMap       map[string]string
+	Manipulators   []Manipulator
+	namespaceSplit *[2]string
+}
+
+func (op *EsOperation) Action() (string, error) {
+	switch op.Op {
+	case Update:
+		return "update", nil
+	case Insert:
+		return "index", nil
+	default:
+		return "", errors.New(fmt.Sprintf("Unsupported operation: ", op.Op))
+	}
+}
+
+// Document returns the changed document for Insert or Update.
+func (op *EsOperation) Document() (map[string]interface{}, error) {
+	var (
+		changes map[string]interface{}
+		err     error
+	)
 	switch op.Op {
 	case Update:
 		// Partial update
 		if v, ok := op.Object["$set"]; ok {
-			return v.(bson.M), nil
+			changes = map[string]interface{}(v.(bson.M))
+			break
 		}
 		// TODO: Unsetting fields
 		if _, ok := op.Object["$unset"]; ok {
-			return changes, errors.New(fmt.Sprint("$unset not yet supported for: ", op))
+			err = errors.New(fmt.Sprint("$unset not yet supported for: ", op))
+			break
 		}
 		// All other updates is a full document(?)
-		return op.Object, nil
+		changes = map[string]interface{}(op.Object)
 	case Insert:
-		return op.Object, nil
+		changes = map[string]interface{}(op.Object)
 	default:
-		return changes, errors.New(fmt.Sprint("Unsupported operation: ", op.Op))
+		err = errors.New(fmt.Sprint("Unsupported operation: ", op.Op))
+	}
+	if err != nil {
+		return changes, err
+	}
+
+	// Run the document through the manipulators to make it look like we want it to before it hits ES
+	for _, manip := range op.Manipulators {
+		if err := manip.Manipulate(&changes); err != nil {
+			return changes, err
+		}
+	}
+
+	return changes, nil
+}
+
+// nsSplit is used for splitting the namespace for Index() and Type().
+func (op *EsOperation) nsSplit() (string, string, error) {
+	if op.namespaceSplit != nil {
+		return op.namespaceSplit[0], op.namespaceSplit[1], nil
+	}
+	parts := strings.Split(op.Namespace, ".")
+	if len(parts) != 2 {
+		return "", "", errors.New("Invalid namespace")
+	}
+	return parts[0], parts[1], nil
+}
+
+func (op *EsOperation) Index() (string, error) {
+	i, _, e := op.nsSplit()
+	if e != nil {
+		return i, e
+	}
+	if mapped, ok := op.IndexMap[i]; !ok {
+		return i, errors.New(fmt.Sprint("No mapped index found for:", i))
+	} else {
+		return mapped, nil
 	}
 }
+func (op *EsOperation) Type() (string, error) {
+	_, t, e := op.nsSplit()
+	return t, e
+}
+
+func (op *EsOperation) Time() *time.Time {
+	return op.Timestamp.Time()
+}
+
+// Manipulator is used for changing documents in specific ways. These can get added to
+// the EsOperation to have changes applied on all mapped operations.
+type Manipulator interface {
+	Manipulate(doc *map[string]interface{}) error
+}
+
+var DefaultManipulators = make([]Manipulator, 0, 100)
