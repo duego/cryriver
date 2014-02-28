@@ -77,10 +77,9 @@ func (c EsClient) SendBulk(b *BulkBody) error {
 // Slurp collects transactions that will be sent towards elasticsearch in batches.
 // Closing the channel will make the function return. Any pending transactions will be flushed before
 // returning.
-func Slurp(server string, esc chan Transaction) {
+func Slurp(client *EsClient, esc chan Transaction) {
 	defer log.Println("Slurper stopped")
 
-	client := NewEsClient(fmt.Sprintf("%s/_bulk", server), 10)
 	bulkBuf := NewBulkBody(MB)
 	bulkTicker := time.NewTicker(time.Second)
 

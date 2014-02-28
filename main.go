@@ -3,6 +3,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"github.com/duego/cryriver/elasticsearch"
 	"github.com/duego/cryriver/mongodb"
 	"log"
@@ -10,7 +11,9 @@ import (
 	_ "net/http/pprof"
 	"os"
 	"os/signal"
+	"runtime"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -21,9 +24,10 @@ var (
 		"initial",
 		false,
 		"True if we want to do initial sync from the full collection, otherwise resume reading oplog")
-	esServer    = flag.String("es", "http://localhost:9200", "Elasticsearch server to index to")
-	esIndex     = flag.String("index", "testing", "Elasticsearch index to use")
-	optimeStore = flag.String(
+	esServer      = flag.String("es", "http://localhost:9200", "Elasticsearch server to index to")
+	esConcurrency = flag.Int("concurrency", 1, "Maximum number of simultaneous ES connections")
+	esIndex       = flag.String("index", "testing", "Elasticsearch index to use")
+	optimeStore   = flag.String(
 		"db", "/tmp/cryriver.db", "What file to save progress on for oplog resumes")
 	ns        = flag.String("ns", "api.users", "The namespace to tail on")
 	debugAddr = flag.String(
@@ -31,6 +35,7 @@ var (
 )
 
 func main() {
+	runtime.GOMAXPROCS(runtime.NumCPU())
 	flag.Parse()
 	log.SetFlags(log.Lshortfile | log.LstdFlags)
 
@@ -51,7 +56,19 @@ func main() {
 	esc := make(chan elasticsearch.Transaction)
 	esDone := make(chan bool)
 	go func() {
-		elasticsearch.Slurp(*esServer, esc)
+		// Boot up our slurpers.
+		// The client will have the transport configured to allow the same amount of connections
+		// as go routines towards ES, each connection may be re-used between slurpers.
+		client := elasticsearch.NewEsClient(fmt.Sprintf("%s/_bulk", *esServer), *esConcurrency)
+		var slurpers sync.WaitGroup
+		for n := 0; n < *esConcurrency; n++ {
+			slurpers.Add(1)
+			go func() {
+				elasticsearch.Slurp(client, esc)
+				slurpers.Done()
+			}()
+		}
+		slurpers.Wait()
 		close(esDone)
 	}()
 
