@@ -37,26 +37,30 @@ type Transaction interface {
 	Timestamper
 }
 
-// EsClient is used for sending the actual requests to elasticsearch.
-type EsClient struct {
+type BulkSender interface {
+	BulkSend(*BulkBody) error
+}
+
+// Client is used for sending the actual requests to elasticsearch.
+type Client struct {
 	*http.Client
 	url string
 }
 
-func NewEsClient(url string, maxConn int) *EsClient {
+func NewClient(url string, maxConn int) *Client {
 	tr := &http.Transport{
 		MaxIdleConnsPerHost: maxConn,
 	}
-	return &EsClient{
+	return &Client{
 		&http.Client{Transport: tr},
 		url,
 	}
 }
 
-// SendBulk will accept a populated BulkBody that will be sent using POST.
+// BulkSend will accept a populated BulkBody that will be sent using POST.
 // If the Post doesn't return any errors, the BulkBody will be Reset to accept new operations.
 // Will return an error on non-200 return codes.
-func (c EsClient) SendBulk(b *BulkBody) error {
+func (c Client) BulkSend(b *BulkBody) error {
 	b.Done()
 	log.Println("Send that buffer!", string(b.Bytes()))
 	resp, err := c.Post(c.url, "application/x-www-form-urlencoded", b)
@@ -77,7 +81,7 @@ func (c EsClient) SendBulk(b *BulkBody) error {
 // Slurp collects transactions that will be sent towards elasticsearch in batches.
 // Closing the channel will make the function return. Any pending transactions will be flushed before
 // returning.
-func Slurp(client *EsClient, esc chan Transaction) {
+func Slurp(client BulkSender, esc chan Transaction) {
 	defer log.Println("Slurper stopped")
 
 	bulkBuf := NewBulkBody(MB)
@@ -89,7 +93,7 @@ func Slurp(client *EsClient, esc chan Transaction) {
 		case op := <-esc:
 			if op == nil {
 				if bulkBuf.Len() > 0 {
-					if err := client.SendBulk(bulkBuf); err != nil {
+					if err := client.BulkSend(bulkBuf); err != nil {
 						log.Println(err)
 					}
 				}
@@ -100,7 +104,7 @@ func Slurp(client *EsClient, esc chan Transaction) {
 			case nil:
 			case BulkBodyFull:
 				log.Println("Bulk body full!")
-				if err := client.SendBulk(bulkBuf); err != nil {
+				if err := client.BulkSend(bulkBuf); err != nil {
 					log.Println(err)
 					// XXX: There is no limit on the amount of pending go routines doing it like this
 					// but at least we won't block
@@ -112,7 +116,7 @@ func Slurp(client *EsClient, esc chan Transaction) {
 		case <-bulkTicker.C:
 			if bulkBuf.Len() > 0 {
 				log.Println("It is time!")
-				if err := client.SendBulk(bulkBuf); err != nil {
+				if err := client.BulkSend(bulkBuf); err != nil {
 					log.Println(err)
 				}
 			}

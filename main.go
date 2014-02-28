@@ -58,7 +58,7 @@ func main() {
 		// Boot up our slurpers.
 		// The client will have the transport configured to allow the same amount of connections
 		// as go routines towards ES, each connection may be re-used between slurpers.
-		client := elasticsearch.NewEsClient(fmt.Sprintf("%s/_bulk", *esServer), *esConcurrency)
+		client := elasticsearch.NewClient(fmt.Sprintf("%s/_bulk", *esServer), *esConcurrency)
 		var slurpers sync.WaitGroup
 		for n := 0; n < *esConcurrency; n++ {
 			slurpers.Add(1)
