@@ -2,36 +2,13 @@
 package elasticsearch
 
 import (
+	"errors"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"time"
 )
-
-// D for document, convenience type for indexing ES documents.
-type D map[string]interface{}
-
-type IndexerOperation int
-
-const (
-	Index IndexerOperation = iota
-	Update
-)
-
-// Mapper decides what elasticsearch operation that applies.
-type Mapper interface {
-	EsMap() (Operation, error)
-}
-
-type Operation struct {
-	Id        string
-	Index     string
-	Type      string
-	TTL       string
-	Timestamp *time.Time
-	Op        IndexerOperation
-	Document  D
-}
 
 type Timestamper interface {
 	Time() *time.Time
@@ -48,10 +25,11 @@ type Documenter interface {
 }
 
 type Operationer interface {
-	// What action to perform, index or update
+	// What action to perform, index or update.
 	Action() (string, error)
 }
 
+// Transaction as in one complete set of values to perform an operation towards elasticsearch.
 type Transaction interface {
 	Operationer
 	Documenter
@@ -59,6 +37,7 @@ type Transaction interface {
 	Timestamper
 }
 
+// EsClient is used for sending the actual requests to elasticsearch.
 type EsClient struct {
 	*http.Client
 	url string
@@ -74,6 +53,9 @@ func NewEsClient(url string, maxConn int) *EsClient {
 	}
 }
 
+// SendBulk will accept a populated BulkBody that will be sent using POST.
+// If the Post doesn't return any errors, the BulkBody will be Reset to accept new operations.
+// Will return an error on non-200 return codes.
 func (c EsClient) SendBulk(b *BulkBody) error {
 	b.Done()
 	log.Println("Send that buffer!", string(b.Bytes()))
@@ -82,15 +64,19 @@ func (c EsClient) SendBulk(b *BulkBody) error {
 		return err
 	}
 	defer resp.Body.Close()
-
 	b.Reset()
-	// TODO: Catch returned ES errors here
-	log.Println(resp)
+
+	// XXX: Do we really need to iterate all items returned to see if all has ok: true?
+	if code := resp.StatusCode; code != 200 {
+		body, _ := ioutil.ReadAll(resp.Body)
+		return errors.New(fmt.Sprintf("Unexpected status code: %d\n%s", code, string(body)))
+	}
 	return nil
 }
 
-// Slurp attaches batch indexer to specified server and feeds mapped operations into it,
-// closing mapc will stop the indexer.
+// Slurp collects transactions that will be sent towards elasticsearch in batches.
+// Closing the channel will make the function return. Any pending transactions will be flushed before
+// returning.
 func Slurp(server string, esc chan Transaction) {
 	defer log.Println("Slurper stopped")
 
@@ -110,17 +96,17 @@ func Slurp(server string, esc chan Transaction) {
 				}
 				return
 			}
-		retry:
 			err := bulkBuf.Add(op)
 			switch err {
 			case nil:
 			case BulkBodyFull:
 				log.Println("Bulk body full!")
-				// FIXME: What to do here if we get an error? It would be a blocking loop
 				if err := client.SendBulk(bulkBuf); err != nil {
 					log.Println(err)
+					// XXX: There is no limit on the amount of pending go routines doing it like this
+					// but at least we won't block
+					go func() { esc <- op }()
 				}
-				goto retry
 			default:
 				log.Println(err)
 			}

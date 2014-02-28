@@ -39,13 +39,10 @@ func (t Timestamp) String() string {
 func (t Timestamp) Save(w io.Writer) error {
 	ts := []byte(strconv.FormatInt(int64(t), 10))
 
-	for written := 0; written < len(ts); {
-		n, err := w.Write(ts)
-		if err != nil {
-			return err
-		}
-		written += n
+	if _, err := w.Write(ts); err != nil {
+		return err
 	}
+
 	return nil
 }
 

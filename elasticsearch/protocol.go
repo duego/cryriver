@@ -16,12 +16,14 @@ const (
 )
 const newline byte = 10
 
+// BulkEntry is one complete entry for elasticsearch bulk requests
 type BulkEntry interface {
 	Operationer
 	Identifier
 	Documenter
 }
 
+// BulkBodyFull will be returned when the configured max ByteSize has been reached
 var BulkBodyFull = errors.New("No more operations can be added")
 
 // BulkBody creates valid bulk data to be used by ES _bulk requests.
@@ -32,17 +34,22 @@ type BulkBody struct {
 	done bool
 }
 
+// indexHeader is the first part of a bulk request, the second part is the values
 type indexHeader struct {
 	Name string `json:"_index"`
 	Type string `json:"_type"`
 	Id   string `json:"_id"`
 }
 
+// NewBulkBody will return a new BulkBody configured to return an error upon adding more bytes than
+// max.
 func NewBulkBody(max ByteSize) *BulkBody {
 	return &BulkBody{max: max}
 }
 
-// Add will write new bulk operations to the buffer. Returns BulkBodyFull when maxed out.
+// Add will write one new bulk operation to the buffer. Returns BulkBodyFull when maxed out.
+// If BulkBodyFull has been returned, the buffer should be sent and Reset() until more operations
+// can be added.
 func (bulk *BulkBody) Add(v BulkEntry) error {
 	// Clear done bool on resets
 	if bulk.Len() == 0 && bulk.done {
@@ -90,6 +97,10 @@ func (bulk *BulkBody) Add(v BulkEntry) error {
 	}
 	// Updates needs to be wrapped with additional options
 	if action == "update" {
+		// No need to send meaningless operations
+		if len(doc) == 0 {
+			return errors.New("Empty document, nothing would get changed!")
+		}
 		doc = map[string]interface{}{
 			"doc":           doc,
 			"doc_as_upsert": true,
