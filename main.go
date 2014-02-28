@@ -15,7 +15,6 @@ import (
 	"strings"
 	"sync"
 	"syscall"
-	"time"
 )
 
 var (
@@ -72,54 +71,31 @@ func main() {
 		close(esDone)
 	}()
 
-	indexes := map[string]string{
-		strings.Split(*ns, ".")[0]: *esIndex,
-	}
-	lastEsSeenTimer := time.NewTicker(time.Second)
-	var (
-		// Operations ES has seen
-		seenMongoOp *mongodb.Operation
-		// Last operation from mongo tailer
-		mongoOp *mongodb.Operation
-		// Elasticsearch operations mapped from mongo operations
-		esOp elasticsearch.Transaction
-		// Nil switched channel for enabling ES delivery once a mongo mapped operation is available
-		esDelivery chan elasticsearch.Transaction = nil
-		// Nil switched channel for enabling more mongo operations once ES operation has been delivered
-		mongoDelivery chan *mongodb.Operation = mongoc
-	)
+	mongoDone := make(chan bool)
+	go func() {
+		// Map mongo collections to es index
+		indexes := map[string]string{
+			strings.Split(*ns, ".")[0]: *esIndex,
+		}
+		// Wrap all mongo operations to comply with ES interface, then send them off to the slurper.
+		for op := range mongoc {
+			esc <- &mongodb.EsOperation{
+				Operation:    op,
+				Manipulators: mongodb.DefaultManipulators,
+				IndexMap:     indexes,
+			}
+			lastEsSeenC <- &op.Timestamp
+		}
+		close(mongoDone)
+	}()
 
 tail:
 	for {
 		select {
 		//  Get more operations from mongo tail
-		case mongoOp = <-mongoDelivery:
-			if mongoOp == nil {
-				break tail
-			}
-			esOp = &mongodb.EsOperation{
-				Operation:    mongoOp,
-				Manipulators: mongodb.DefaultManipulators,
-				IndexMap:     indexes,
-			}
-			// Nil switch to block mongo delivery until elasticsearch delivery is done
-			mongoDelivery = nil
-			esDelivery = esc
-		// Deliver mapped operation to ES
-		case esDelivery <- esOp:
-			// Forward to elasticsearch based on operations from mongodb tail
-			// Block the channel until new deliveries are available
-			esDelivery = nil
-			mongoDelivery = mongoc
-			// Keep track of what ES has seen so far
-			seenMongoOp = mongoOp
-		// Store the latest timestamps of operations sent to ES
-		case <-lastEsSeenTimer.C:
-			if seenMongoOp == nil {
-				continue
-			}
-			lastEsSeenC <- &seenMongoOp.Timestamp
-			seenMongoOp = nil
+		case <-mongoDone:
+			log.Println("MongoDB tailer returned")
+			break tail
 		// ES client closed
 		case <-esDone:
 			log.Println("ES slurper returned")
