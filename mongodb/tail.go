@@ -57,15 +57,19 @@ func Tail(server, ns string, initial bool, lastTs *Timestamp, opc chan<- *Operat
 		initialDone := make(chan bool)
 		go func() {
 			log.Println("Doing initial import, this may take a while...")
-			result := new(bson.M)
 			count := 0
-			for iter.Next(result) {
-				opc <- &Operation{
-					Namespace: ns,
-					Op:        Insert,
-					Object:    *result,
+			for {
+				var result bson.M
+				if iter.Next(&result) {
+					opc <- &Operation{
+						Namespace: ns,
+						Op:        Insert,
+						Object:    result,
+					}
+					count++
+				} else {
+					break
 				}
-				count++
 			}
 			log.Println("Initial import object count:", count)
 			close(initialDone)
@@ -92,7 +96,6 @@ func Tail(server, ns string, initial bool, lastTs *Timestamp, opc chan<- *Operat
 
 	// Start tailing oplog
 	col := session.DB("local").C("oplog.rs")
-	result := new(Operation)
 
 	query := bson.M{"ns": ns}
 	if lastTs != nil {
@@ -102,8 +105,13 @@ func Tail(server, ns string, initial bool, lastTs *Timestamp, opc chan<- *Operat
 	// Start tailing, sorted by forward natural order by default in capped collections.
 	iter := col.Find(query).Tail(-1)
 	go func() {
-		for iter.Next(result) {
-			opc <- result
+		for {
+			var result Operation
+			if iter.Next(&result) {
+				opc <- &result
+			} else {
+				break
+			}
 		}
 		close(opc)
 	}()
