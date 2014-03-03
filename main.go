@@ -89,22 +89,16 @@ func main() {
 		close(mongoDone)
 	}()
 
-tail:
-	for {
-		select {
-		//  Get more operations from mongo tail
-		case <-mongoDone:
-			log.Println("MongoDB tailer returned")
-			break tail
-		// ES client closed
-		case <-esDone:
-			log.Println("ES slurper returned")
-			break tail
-		// An interrupt signal was catched
-		case <-interrupt:
-			log.Println("Closing down...")
-			break tail
-		}
+	select {
+	//  Get more operations from mongo tail
+	case <-mongoDone:
+		log.Println("MongoDB tailer returned")
+	// ES client closed
+	case <-esDone:
+		log.Println("ES slurper returned")
+	// An interrupt signal was catched
+	case <-interrupt:
+		log.Println("Closing down...")
 	}
 
 	// MongoDB tailer shutdown

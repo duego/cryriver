@@ -1,6 +1,7 @@
 package mongodb
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"labix.org/v2/mgo/bson"
@@ -18,6 +19,19 @@ const (
 	Command OplogOperation = "c"
 )
 
+// OperationError formats errors to have a pretty printed json object to accompany the message.
+type OperationError struct {
+	// The error message
+	msg string
+
+	// Something that we want to json marshall for a pretty object output
+	op interface{}
+}
+
+func (oe OperationError) Error() string {
+	return fmt.Sprintf("%s\n%s", oe.msg, oe.op)
+}
+
 // Operation maps one oplog entry into a structure.
 type Operation struct {
 	Timestamp Timestamp `bson:"ts"`
@@ -29,6 +43,14 @@ type Operation struct {
 
 	// The target document on update queires, should contain an id.
 	UpdateObject bson.M `bson:"o2"`
+}
+
+func (op Operation) String() string {
+	if b, err := json.MarshalIndent(op, "", "\t"); err != nil {
+		return fmt.Sprint(op)
+	} else {
+		return string(b)
+	}
 }
 
 // Id returns the object id as a hex string for the current Operation.
@@ -44,12 +66,12 @@ func (op *Operation) Id() (string, error) {
 
 	id, ok := object["_id"]
 	if !ok {
-		return "", errors.New("_id does not exist in object")
+		return "", OperationError{"_id does not exist in object", op}
 	}
 
 	bid, ok := id.(bson.ObjectId)
 	if !ok {
-		return "", errors.New("Could not find a bson objectid")
+		return "", OperationError{"Could not find a bson objectid", op}
 	}
 
 	return bid.Hex(), nil
@@ -70,7 +92,7 @@ func (op *EsOperation) Action() (string, error) {
 	case Insert:
 		return "index", nil
 	default:
-		return "", errors.New(fmt.Sprintf("Unsupported operation: ", op.Op))
+		return "", OperationError{"Unsupported operation", op}
 	}
 }
 
@@ -89,7 +111,7 @@ func (op *EsOperation) Document() (map[string]interface{}, error) {
 		}
 		// TODO: Unsetting fields
 		if _, ok := op.Object["$unset"]; ok {
-			err = errors.New(fmt.Sprint("$unset not yet supported for: ", op))
+			err = OperationError{"$unset not supported yet", op}
 			break
 		}
 		// All other updates is a full document(?)
@@ -97,7 +119,7 @@ func (op *EsOperation) Document() (map[string]interface{}, error) {
 	case Insert:
 		changes = map[string]interface{}(op.Object)
 	default:
-		err = errors.New(fmt.Sprint("Unsupported operation: ", op.Op))
+		err = OperationError{"Unsupported operation", op}
 	}
 	if err != nil {
 		return changes, err
@@ -120,7 +142,7 @@ func (op *EsOperation) nsSplit() (string, string, error) {
 	}
 	parts := strings.Split(op.Namespace, ".")
 	if len(parts) != 2 {
-		return "", "", errors.New("Invalid namespace")
+		return "", "", OperationError{"Invalid namespace", op}
 	}
 	return parts[0], parts[1], nil
 }
