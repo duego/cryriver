@@ -60,8 +60,8 @@ func main() {
 		// as go routines towards ES, each connection may be re-used between slurpers.
 		client := elasticsearch.NewClient(fmt.Sprintf("%s/_bulk", *esServer), *esConcurrency)
 		var slurpers sync.WaitGroup
+		slurpers.Add(*esConcurrency)
 		for n := 0; n < *esConcurrency; n++ {
-			slurpers.Add(1)
 			go func() {
 				elasticsearch.Slurp(client, esc)
 				slurpers.Done()
@@ -71,27 +71,34 @@ func main() {
 		close(esDone)
 	}()
 
-	mongoDone := make(chan bool)
+	tailDone := make(chan bool)
+	stopTailing := make(chan bool)
 	go func() {
 		// Map mongo collections to es index
 		indexes := map[string]string{
 			strings.Split(*ns, ".")[0]: *esIndex,
 		}
-		// Wrap all mongo operations to comply with ES interface, then send them off to the slurper.
 		for op := range mongoc {
-			esc <- &mongodb.EsOperation{
+			select {
+			// Wrap all mongo operations to comply with ES interface, then send them off to the slurper.
+			case esc <- &mongodb.EsOperation{
 				Operation:    op,
 				Manipulators: mongodb.DefaultManipulators,
 				IndexMap:     indexes,
+			}:
+				lastEsSeenC <- &op.Timestamp
+			// Abort delivering any pending EsOperations we might block for
+			case <-stopTailing:
+				break
 			}
-			lastEsSeenC <- &op.Timestamp
 		}
-		close(mongoDone)
+		// If mongoc closed, tailer has stopped
+		close(tailDone)
 	}()
 
 	select {
 	//  Get more operations from mongo tail
-	case <-mongoDone:
+	case <-tailDone:
 		log.Println("MongoDB tailer returned")
 	// ES client closed
 	case <-esDone:
@@ -111,8 +118,12 @@ func main() {
 	}
 
 	// Elasticsearch indexer shutdown
-	close(esc)
+	log.Println("Waiting for EsOperation tail to stop")
+	close(stopTailing)
+	<-tailDone
+
 	log.Println("Waiting for ES to return")
+	close(esc)
 	<-esDone
 	log.Println("Bye!")
 }

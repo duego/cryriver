@@ -55,18 +55,23 @@ func Tail(server, ns string, initial bool, lastTs *Timestamp, opc chan<- *Operat
 		col := session.DB(nsParts[0]).C(nsParts[1])
 		iter := col.Find(nil).Iter()
 		initialDone := make(chan bool)
+		abortImport := make(chan bool)
 		go func() {
 			log.Println("Doing initial import, this may take a while...")
 			count := 0
 			for {
 				var result bson.M
 				if iter.Next(&result) {
-					opc <- &Operation{
+					select {
+					case opc <- &Operation{
 						Namespace: ns,
 						Op:        Insert,
 						Object:    result,
+					}:
+						count++
+					case <-abortImport:
+						break
 					}
-					count++
 				} else {
 					break
 				}
@@ -87,7 +92,11 @@ func Tail(server, ns string, initial bool, lastTs *Timestamp, opc chan<- *Operat
 				break waitInitialSync
 			case errc := <-closing:
 				log.Println("Initial import was interrupted")
-				errc <- iter.Close()
+				err := iter.Close()
+				close(abortImport)
+				<-initialDone
+				close(opc)
+				errc <- err
 				return
 			}
 		}
