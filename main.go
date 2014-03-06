@@ -44,8 +44,11 @@ func main() {
 	signal.Notify(interrupt, os.Interrupt, syscall.SIGTERM)
 
 	mongoc := make(chan *mongodb.Operation)
-	closingMongo := make(chan chan error)
-	go mongodb.Tail(*mongoServer, *ns, *mongoInitial, lastEsSeen, mongoc, closingMongo)
+	mongoErr := make(chan error)
+	exit := make(chan bool)
+	go func() {
+		mongoErr <- mongodb.Tail(*mongoServer, *ns, *mongoInitial, lastEsSeen, mongoc, exit)
+	}()
 
 	esc := make(chan elasticsearch.Transaction)
 	esDone := make(chan bool)
@@ -67,7 +70,6 @@ func main() {
 	}()
 
 	tailDone := make(chan bool)
-	stopTailing := make(chan bool)
 	go func() {
 		// Map mongo collections to es index
 		indexes := map[string]string{
@@ -84,7 +86,7 @@ func main() {
 			case esc <- esOp:
 				lastEsSeenC <- &op.Timestamp
 			// Abort delivering any pending EsOperations we might block for
-			case <-stopTailing:
+			case <-exit:
 				break
 			}
 		}
@@ -103,11 +105,10 @@ func main() {
 	case <-interrupt:
 		log.Println("Closing down...")
 	}
+	close(exit)
 
 	// MongoDB tailer shutdown
-	errc := make(chan error)
-	closingMongo <- errc
-	if err := <-errc; err != nil {
+	if err := <-mongoErr; err != nil {
 		log.Println(err)
 	} else {
 		log.Println("No errors occured in mongo tail")
@@ -115,10 +116,10 @@ func main() {
 
 	// Elasticsearch indexer shutdown
 	log.Println("Waiting for EsOperation tail to stop")
-	close(stopTailing)
 	<-tailDone
 
 	log.Println("Waiting for ES to return")
+	// We are the producer for this channel, close it down and wait for ES slurpers to return
 	close(esc)
 	<-esDone
 	log.Println("Bye!")

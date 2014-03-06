@@ -26,13 +26,13 @@ func Optime(s *mgo.Session) (*Timestamp, error) {
 }
 
 // Tail sends mongodb operations for the namespace on the specified channel.
-// To stop tailing, send an error channel to closing, also used for returning errors after opc closes.
-func Tail(server, ns string, initial bool, lastTs *Timestamp, opc chan<- *Operation, closing chan chan error) {
+// Interrupts tailing if exit chan closes.
+func Tail(server, ns string, initial bool, lastTs *Timestamp, opc chan<- *Operation, exit chan bool) error {
+	defer close(opc)
+
 	session, err := mgo.Dial(server + "?connect=direct")
 	if err != nil {
-		close(opc)
-		<-closing <- err
-		return
+		return err
 	}
 	defer session.Close()
 
@@ -40,22 +40,17 @@ func Tail(server, ns string, initial bool, lastTs *Timestamp, opc chan<- *Operat
 		// If we are doing an intitial import, replace the oplog timestamp with the most current
 		// as it doesn't make sense to apply the same objects multple times.
 		if ts, err := Optime(session); err != nil {
-			close(opc)
-			<-closing <- err
-			return
+			return err
 		} else {
 			lastTs = ts
 		}
 		nsParts := strings.Split(ns, ".")
 		if len(nsParts) != 2 {
-			close(opc)
-			<-closing <- errors.New("Exected namespace provided as database.collection")
-			return
+			return errors.New("Exected namespace provided as database.collection")
 		}
 		col := session.DB(nsParts[0]).C(nsParts[1])
 		iter := col.Find(nil).Iter()
 		initialDone := make(chan bool)
-		abortImport := make(chan bool)
 		go func() {
 			log.Println("Doing initial import, this may take a while...")
 			count := 0
@@ -69,7 +64,7 @@ func Tail(server, ns string, initial bool, lastTs *Timestamp, opc chan<- *Operat
 						Object:    result,
 					}:
 						count++
-					case <-abortImport:
+					case <-exit:
 						break
 					}
 				} else {
@@ -85,19 +80,14 @@ func Tail(server, ns string, initial bool, lastTs *Timestamp, opc chan<- *Operat
 			select {
 			case <-initialDone:
 				if err := iter.Close(); err != nil {
-					close(opc)
-					<-closing <- err
-					return
+					return err
 				}
 				break waitInitialSync
-			case errc := <-closing:
+			case <-exit:
 				log.Println("Initial import was interrupted")
 				err := iter.Close()
-				close(abortImport)
 				<-initialDone
-				close(opc)
-				errc <- err
-				return
+				return err
 			}
 		}
 		log.Println("Initial import has completed")
@@ -122,9 +112,9 @@ func Tail(server, ns string, initial bool, lastTs *Timestamp, opc chan<- *Operat
 				break
 			}
 		}
-		close(opc)
 	}()
 
-	// Block until closing and use the returned error channel to return any errors from iter close.
-	<-closing <- iter.Close()
+	// Block until we are supposed to exit, close the iterator when that happens
+	<-exit
+	return iter.Close()
 }
