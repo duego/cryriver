@@ -18,19 +18,14 @@ import (
 )
 
 var (
-	mongoServer  = flag.String("mongo", "localhost", "Specific server to tail")
-	mongoInitial = flag.Bool(
-		"initial",
-		false,
-		"True if we want to do initial sync from the full collection, otherwise resume reading oplog")
+	mongoServer   = flag.String("mongo", "localhost", "Specific server to tail")
+	mongoInitial  = flag.Bool("initial", false, "True if we want to do initial sync from the full collection, otherwise resume reading oplog")
 	esServer      = flag.String("es", "http://localhost:9200", "Elasticsearch server to index to")
 	esConcurrency = flag.Int("concurrency", 1, "Maximum number of simultaneous ES connections")
 	esIndex       = flag.String("index", "testing", "Elasticsearch index to use")
-	optimeStore   = flag.String(
-		"db", "/tmp/cryriver.db", "What file to save progress on for oplog resumes")
-	ns        = flag.String("ns", "api.users", "The namespace to tail on")
-	debugAddr = flag.String(
-		"debug", "127.0.0.1:5000", "Which address to listen on for debug, empty for no debug")
+	optimeStore   = flag.String("db", "/tmp/cryriver.db", "What file to save progress on for oplog resumes")
+	ns            = flag.String("ns", "api.users", "The namespace to tail on")
+	debugAddr     = flag.String("debug", "127.0.0.1:5000", "Which address to listen on for debug, empty for no debug")
 )
 
 func main() {
