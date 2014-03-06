@@ -68,7 +68,7 @@ func Tail(server, ns string, initial bool, lastTs *Timestamp, opc chan<- *Operat
 						break
 					}
 				} else {
-					break
+					break // maybe move this up and invert the if and loose one level of indentation for the main body of the code...
 				}
 			}
 			log.Println("Initial import object count:", count)
