@@ -74,13 +74,14 @@ func main() {
 			strings.Split(*ns, ".")[0]: *esIndex,
 		}
 		for op := range mongoc {
-			select {
 			// Wrap all mongo operations to comply with ES interface, then send them off to the slurper.
-			case esc <- &mongodb.EsOperation{
+			esOp := &mongodb.EsOperation{
 				Operation:    op,
 				Manipulators: mongodb.DefaultManipulators,
 				IndexMap:     indexes,
-			}:
+			}
+			select {
+			case esc <- esOp:
 				lastEsSeenC <- &op.Timestamp
 			// Abort delivering any pending EsOperations we might block for
 			case <-stopTailing:
