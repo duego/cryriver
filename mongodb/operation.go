@@ -181,4 +181,10 @@ func (m ManipulateFunc) Manipulate(doc *bson.M) error {
 	return m(doc)
 }
 
+type ManipulatorFunc func(*map[string]interface{}) error
+
+func (f ManipulatorFunc) Manipulate(doc *map[string]interface{}) error {
+	return f(doc)
+}
+
 var DefaultManipulators = make([]Manipulator, 0, 100)
