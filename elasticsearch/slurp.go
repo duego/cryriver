@@ -24,7 +24,7 @@ type Documenter interface {
 	Document() (map[string]interface{}, error)
 }
 
-type Operationer interface {
+type Operationer interface { // Actioner?
 	// What action to perform, index or update.
 	Action() (string, error)
 }
