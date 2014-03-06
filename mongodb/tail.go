@@ -58,7 +58,7 @@ func Tail(server, ns string, initial bool, lastTs *Timestamp, opc chan<- *Operat
 				var result bson.M
 				if iter.Next(&result) {
 					select {
-					case opc <- &Operation{
+					case opc <- &Operation{ // Same here I think it looks a bit clunky to have the whole thing inside the case thing.
 						Namespace: ns,
 						Op:        Insert,
 						Object:    result,
