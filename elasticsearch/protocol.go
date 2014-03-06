@@ -112,7 +112,7 @@ func (bulk *BulkBody) Add(v BulkEntry) error {
 	}
 
 	// Header, values and final delimeter is separated by newlines
-	entry := bytes.Join([][]byte{headerJson, valuesJson, nil}, []byte{newline})
+	entry := bytes.Join([][]byte{headerJson, valuesJson, nil}, []byte{newline}) // Why nil?
 	_, err = (*bulk).Write(entry)
 
 	return err
