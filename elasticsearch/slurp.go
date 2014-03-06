@@ -109,6 +109,9 @@ func Slurp(client BulkSender, esc chan Transaction) {
 					// XXX: There is no limit on the amount of pending go routines doing it like this
 					// but at least we won't block
 					go func() { esc <- op }() // Uhm, so this is for... uhm putting things back in the chan?
+					// Maybe put it back with out the goroutine and have the
+					// chan be buffered instead? Now it is "buffering" via
+					// goroutines, right?
 				}
 			default:
 				log.Println(err)
