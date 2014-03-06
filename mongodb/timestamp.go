@@ -12,7 +12,7 @@ import (
 type Timestamp bson.MongoTimestamp
 
 // Time converts a mongo timestamp to Time with UTC selected as timezone.
-func (t *Timestamp) Time() *time.Time {
+func (t *Timestamp) Time() *time.Time { // (majoh): Why pointers?
 	// Mongo special timestamp: First 32 bits are seconds, last 32 bits are a counter in a second.
 	// originally used to keep timestamps unique in oplog. We only need the seconds part.
 	i := int64(*t >> 32)
