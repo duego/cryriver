@@ -173,4 +173,11 @@ type Manipulator interface {
 	Manipulate(doc *map[string]interface{}) error
 }
 
+// ManipulateFunc makes a function into a Manipulator
+type ManipulateFunc func(doc *map[string]interface{}) error
+
+func (m ManipulateFunc) Manipulate(doc *map[string]interface{}) error {
+	return m(doc)
+}
+
 var DefaultManipulators = make([]Manipulator, 0, 100)
