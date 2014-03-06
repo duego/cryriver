@@ -97,7 +97,7 @@ func Slurp(client BulkSender, esc chan Transaction) {
 						log.Println(err)
 					}
 				}
-				return
+				return // Just return? No logging no error no nothing?
 			}
 			err := bulkBuf.Add(op)
 			switch err {
