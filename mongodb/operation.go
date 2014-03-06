@@ -99,14 +99,14 @@ func (op *EsOperation) Action() (string, error) {
 // Document returns the changed document for Insert or Update.
 func (op *EsOperation) Document() (map[string]interface{}, error) {
 	var (
-		changes map[string]interface{}
+		changes bson.M
 		err     error
 	)
 	switch op.Op {
 	case Update:
 		// Partial update
 		if v, ok := op.Object["$set"]; ok {
-			changes = map[string]interface{}(v.(bson.M))
+			changes = v.(bson.M)
 			break
 		}
 		// TODO: Unsetting fields
@@ -115,9 +115,9 @@ func (op *EsOperation) Document() (map[string]interface{}, error) {
 			break
 		}
 		// All other updates is a full document(?)
-		changes = map[string]interface{}(op.Object)
+		changes = bson.M(op.Object)
 	case Insert:
-		changes = map[string]interface{}(op.Object)
+		changes = bson.M(op.Object)
 	default:
 		err = OperationError{"Unsupported operation", op}
 	}
@@ -132,7 +132,8 @@ func (op *EsOperation) Document() (map[string]interface{}, error) {
 		}
 	}
 
-	return changes, nil
+	// Return as a map so that ES doesn't have to know about bson.M
+	return map[string]interface{}(changes), nil
 }
 
 // nsSplit is used for splitting the namespace for Index() and Type().
@@ -170,13 +171,13 @@ func (op *EsOperation) Time() *time.Time {
 // Manipulator is used for changing documents in specific ways. These can get added to
 // the EsOperation to have changes applied on all mapped operations.
 type Manipulator interface {
-	Manipulate(doc *map[string]interface{}) error
+	Manipulate(doc *bson.M) error
 }
 
 // ManipulateFunc makes a function into a Manipulator
-type ManipulateFunc func(doc *map[string]interface{}) error
+type ManipulateFunc func(doc *bson.M) error
 
-func (m ManipulateFunc) Manipulate(doc *map[string]interface{}) error {
+func (m ManipulateFunc) Manipulate(doc *bson.M) error {
 	return m(doc)
 }
 
