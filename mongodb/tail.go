@@ -46,7 +46,7 @@ func Tail(server, ns string, initial bool, lastTs *Timestamp, opc chan<- *Operat
 		}
 		nsParts := strings.Split(ns, ".")
 		if len(nsParts) != 2 {
-			return errors.New("Exected namespace provided as database.collection")
+			return errors.New("Exected namespace provided as database.collection") // Expected?
 		}
 		col := session.DB(nsParts[0]).C(nsParts[1])
 		iter := col.Find(nil).Iter()
