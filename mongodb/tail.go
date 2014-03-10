@@ -96,11 +96,14 @@ func Tail(server, ns string, initial bool, lastTs *Timestamp, opc chan<- *Operat
 	// Start tailing oplog
 	col := session.DB("local").C("oplog.rs")
 
-	query := bson.M{"ns": ns}
-	if lastTs != nil {
-		log.Println("Resuming oplog from timestamp:", *lastTs)
-		query["ts"] = bson.M{"$gt": *lastTs}
+	// Avoid issue where we blindly start tailing all oplog, either we should have gotten it from
+	// initial import or the one previously saved to disk.
+	if lastTs == nil || int64(*lastTs) == 0 {
+		return errors.New("Unknown oplog timestamp, you probably want to run initial import first.")
 	}
+	log.Println("Resuming oplog from timestamp:", *lastTs)
+	query := bson.M{"ns": ns, "ts": bson.M{"$gt": *lastTs}}
+
 	// Start tailing, sorted by forward natural order by default in capped collections.
 	iter := col.Find(query).Tail(-1)
 	go func() {
