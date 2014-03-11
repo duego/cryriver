@@ -110,6 +110,7 @@ func (bulk *BulkBody) Add(v BulkEntry) error {
 		}
 	}
 
+	// Deletes doesn't need to provide values
 	if action != "delete" {
 		valuesJson, err := json.Marshal(doc)
 		if err != nil {

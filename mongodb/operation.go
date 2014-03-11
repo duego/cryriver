@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"labix.org/v2/mgo"
 	"labix.org/v2/mgo/bson"
-	"log"
 	"strings"
 	"time"
 )
@@ -54,8 +54,7 @@ func (op Operation) String() string {
 	}
 }
 
-// Id returns the object id as a hex string for the current Operation.
-func (op *Operation) Id() (string, error) {
+func (op *Operation) ObjectId() (bson.ObjectId, error) {
 	var object bson.M
 
 	switch op.Op {
@@ -67,15 +66,14 @@ func (op *Operation) Id() (string, error) {
 
 	id, ok := object["_id"]
 	if !ok {
-		return "", OperationError{"_id does not exist in object", op}
+		return bson.ObjectId(""), OperationError{"_id does not exist in object", op}
 	}
 
 	bid, ok := id.(bson.ObjectId)
 	if !ok {
-		return "", OperationError{"Could not find a bson objectid", op}
+		return bson.ObjectId(""), OperationError{"Could not find a bson objectid", op}
 	}
-
-	return bid.Hex(), nil
+	return bid, nil
 }
 
 // Implements the rest of elasticsearch interface for easy export of Operation.
@@ -86,9 +84,10 @@ type EsOperation struct {
 	namespaceSplit *[2]string
 	doc            map[string]interface{}
 	action         string
+	session        *mgo.Session
 }
 
-func NewEsOperation(indexes map[string]string, manips []Manipulator, op *Operation) *EsOperation {
+func NewEsOperation(session *mgo.Session, indexes map[string]string, manips []Manipulator, op *Operation) *EsOperation {
 	if manips == nil {
 		manips = DefaultManipulators
 	}
@@ -96,6 +95,7 @@ func NewEsOperation(indexes map[string]string, manips []Manipulator, op *Operati
 		Operation:    op,
 		manipulators: manips,
 		indexMap:     indexes,
+		session:      session,
 	}
 
 	// Return delete operation if object delete == true.
@@ -111,10 +111,17 @@ func NewEsOperation(indexes map[string]string, manips []Manipulator, op *Operati
 				}
 			}
 		}
-	} else {
-		log.Println(err)
 	}
 	return &esOp
+}
+
+// Id returns the object id as a hex string for the current Operation.
+func (op *EsOperation) Id() (string, error) {
+	id, err := op.Operation.ObjectId()
+	if err != nil {
+		return "", err
+	}
+	return id.Hex(), nil
 }
 
 func (op *EsOperation) Action() (string, error) {
@@ -123,7 +130,12 @@ func (op *EsOperation) Action() (string, error) {
 	}
 	switch op.Op {
 	case Update:
-		op.action = "update"
+		// Treat $unset as index operations for now to reduce complexity
+		if _, ok := op.Object["$unset"]; ok {
+			op.action = "index"
+		} else {
+			op.action = "update"
+		}
 	case Insert:
 		op.action = "index"
 	case Delete:
@@ -139,10 +151,10 @@ func (op *EsOperation) Document() (map[string]interface{}, error) {
 	if op.doc != nil {
 		return op.doc, nil
 	}
-	var (
-		changes bson.M
-		err     error
-	)
+	op.doc = make(map[string]interface{})
+
+	var changes bson.M
+
 	switch op.Op {
 	case Update:
 		// Partial update
@@ -150,20 +162,28 @@ func (op *EsOperation) Document() (map[string]interface{}, error) {
 			changes = v.(bson.M)
 			break
 		}
-		// TODO: Unsetting fields
 		if _, ok := op.Object["$unset"]; ok {
-			err = OperationError{"$unset not supported yet", op}
+			// TODO: Return an ES script that unsets the fields instead of re-index the whole object.
+			// For now we will fetch the full object to make sure no additional fields is kept around.
+			db, col, err := op.nsSplit()
+			if err != nil {
+				return nil, err
+			}
+			id, err := op.ObjectId()
+			if err != nil {
+				return nil, err
+			}
+			object := bson.M{}
+			op.session.DB(db).C(col).FindId(id).One(&object)
+			changes = object
 			break
 		}
 		// All other updates is a full document(?)
-		changes = bson.M(op.Object)
+		fallthrough
 	case Insert:
 		changes = bson.M(op.Object)
 	default:
-		err = OperationError{"Unsupported operation", op}
-	}
-	if err != nil {
-		return changes, err
+		return nil, OperationError{"Unsupported operation", op}
 	}
 
 	// Run the document through the manipulators to make it look like we want it to before it hits ES
@@ -172,9 +192,9 @@ func (op *EsOperation) Document() (map[string]interface{}, error) {
 			return nil, err
 		}
 	}
-
-	// Return as a map so that ES doesn't have to know about bson.M
+	// Stored as a map so that ES doesn't have to know about bson.M which is the same.
 	op.doc = map[string]interface{}(changes)
+
 	return op.doc, nil
 }
 

@@ -76,10 +76,10 @@ func TestUpdateOperation(t *testing.T) {
 	if op.Op != Update {
 		t.Error("Expected operation to be", Update)
 	}
-	if id, err := op.Id(); err != nil {
+	if id, err := op.ObjectId(); err != nil {
 		t.Error(err)
 	} else {
-		if id != "52e7db73f4eb27371874b289" {
+		if id.Hex() != "52e7db73f4eb27371874b289" {
 			t.Error("Invalid Id", id)
 		}
 	}
@@ -120,10 +120,10 @@ func TestInsertOperation(t *testing.T) {
 	if op.Op != Insert {
 		t.Error("Expected operation to be", Insert)
 	}
-	if id, err := op.Id(); err != nil {
+	if id, err := op.ObjectId(); err != nil {
 		t.Error(err)
 	} else {
-		if id != "50eadae392cd864e50cd0dbc" {
+		if id.Hex() != "50eadae392cd864e50cd0dbc" {
 			t.Error("Invalid Id", id)
 		}
 	}

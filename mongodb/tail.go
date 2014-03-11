@@ -27,13 +27,8 @@ func Optime(s *mgo.Session) (*Timestamp, error) {
 
 // Tail sends mongodb operations for the namespace on the specified channel.
 // Interrupts tailing if exit chan closes.
-func Tail(server, ns string, initial bool, lastTs *Timestamp, opc chan<- *Operation, exit chan bool) error {
+func Tail(session *mgo.Session, ns string, initial bool, lastTs *Timestamp, opc chan<- *Operation, exit chan bool) error {
 	defer close(opc)
-
-	session, err := mgo.Dial(server + "?connect=direct")
-	if err != nil {
-		return err
-	}
 	defer session.Close()
 
 	if initial {

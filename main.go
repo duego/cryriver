@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/duego/cryriver/elasticsearch"
 	"github.com/duego/cryriver/mongodb"
+	"labix.org/v2/mgo"
 	"log"
 	"net/http"
 	_ "net/http/pprof"
@@ -43,11 +44,16 @@ func main() {
 	interrupt := make(chan os.Signal)
 	signal.Notify(interrupt, os.Interrupt, syscall.SIGTERM)
 
+	mgoSession, err := mgo.Dial(*mongoServer + "?connect=direct")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer mgoSession.Close()
 	mongoc := make(chan *mongodb.Operation)
 	mongoErr := make(chan error)
 	exit := make(chan bool)
 	go func() {
-		mongoErr <- mongodb.Tail(*mongoServer, *ns, *mongoInitial, lastEsSeen, mongoc, exit)
+		mongoErr <- mongodb.Tail(mgoSession.New(), *ns, *mongoInitial, lastEsSeen, mongoc, exit)
 	}()
 
 	esc := make(chan elasticsearch.Transaction)
@@ -77,7 +83,7 @@ func main() {
 		}
 		for op := range mongoc {
 			// Wrap all mongo operations to comply with ES interface, then send them off to the slurper.
-			esOp := mongodb.NewEsOperation(indexes, nil, op)
+			esOp := mongodb.NewEsOperation(mgoSession, indexes, nil, op)
 			select {
 			case esc <- esOp:
 				lastEsSeenC <- &op.Timestamp
