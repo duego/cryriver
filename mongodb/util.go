@@ -20,9 +20,9 @@ func (b BsonTraverser) Next(key string) BsonTraverser {
 			b = BsonTraverser{M: t}
 		case map[string]interface{}:
 			b = BsonTraverser{M: bson.M(t)}
-		default:
-			b.value = t
 		}
+		// Keep a reference to the last item for Value()
+		b.value = next
 	} else {
 		// Reached something else than a string map but we are trying to traverse it, set nil
 		b.value = nil
