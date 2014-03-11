@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"labix.org/v2/mgo/bson"
+	"log"
 	"strings"
 	"time"
 )
@@ -80,24 +81,64 @@ func (op *Operation) Id() (string, error) {
 // Implements the rest of elasticsearch interface for easy export of Operation.
 type EsOperation struct {
 	*Operation
-	IndexMap       map[string]string
-	Manipulators   []Manipulator
+	manipulators   []Manipulator
+	indexMap       map[string]string
 	namespaceSplit *[2]string
+	doc            map[string]interface{}
+	action         string
+}
+
+func NewEsOperation(indexes map[string]string, manips []Manipulator, op *Operation) *EsOperation {
+	if manips == nil {
+		manips = DefaultManipulators
+	}
+	esOp := EsOperation{
+		Operation:    op,
+		manipulators: manips,
+		indexMap:     indexes,
+	}
+
+	// Return delete operation if object delete == true.
+	doc, err := esOp.Document()
+	if err == nil {
+		if v, ok := doc["deleted"]; ok {
+			if deleted, ok := v.(bool); deleted && ok {
+				esOp = EsOperation{
+					Operation: op,
+					action:    "delete",
+					doc:       make(map[string]interface{}),
+					indexMap:  indexes,
+				}
+			}
+		}
+	} else {
+		log.Println(err)
+	}
+	return &esOp
 }
 
 func (op *EsOperation) Action() (string, error) {
+	if op.action != "" {
+		return op.action, nil
+	}
 	switch op.Op {
 	case Update:
-		return "update", nil
+		op.action = "update"
 	case Insert:
-		return "index", nil
+		op.action = "index"
+	case Delete:
+		op.action = "delete"
 	default:
 		return "", OperationError{"Unsupported operation", op}
 	}
+	return op.action, nil
 }
 
 // Document returns the changed document for Insert or Update.
 func (op *EsOperation) Document() (map[string]interface{}, error) {
+	if op.doc != nil {
+		return op.doc, nil
+	}
 	var (
 		changes bson.M
 		err     error
@@ -126,14 +167,15 @@ func (op *EsOperation) Document() (map[string]interface{}, error) {
 	}
 
 	// Run the document through the manipulators to make it look like we want it to before it hits ES
-	for _, manip := range op.Manipulators {
+	for _, manip := range op.manipulators {
 		if err := manip.Manipulate(&changes); err != nil {
-			return changes, err
+			return nil, err
 		}
 	}
 
 	// Return as a map so that ES doesn't have to know about bson.M
-	return map[string]interface{}(changes), nil
+	op.doc = map[string]interface{}(changes)
+	return op.doc, nil
 }
 
 // nsSplit is used for splitting the namespace for Index() and Type().
@@ -153,7 +195,7 @@ func (op *EsOperation) Index() (string, error) {
 	if e != nil {
 		return i, e
 	}
-	if mapped, ok := op.IndexMap[i]; !ok {
+	if mapped, ok := op.indexMap[i]; !ok {
 		return i, errors.New(fmt.Sprint("No mapped index found for:", i))
 	} else {
 		return mapped, nil

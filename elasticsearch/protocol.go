@@ -85,9 +85,12 @@ func (bulk *BulkBody) Add(v BulkEntry) error {
 	if err != nil {
 		return err
 	}
-	headerJson, err := json.Marshal(map[string]interface{}{action: header})
-	if err != nil {
+
+	parts := make([][]byte, 0, 3)
+	if headerJson, err := json.Marshal(map[string]interface{}{action: header}); err != nil {
 		return err
+	} else {
+		parts = append(parts, headerJson)
 	}
 
 	// Then is the values that should be applied
@@ -106,13 +109,18 @@ func (bulk *BulkBody) Add(v BulkEntry) error {
 			"doc_as_upsert": true,
 		}
 	}
-	valuesJson, err := json.Marshal(doc)
-	if err != nil {
-		return err
+
+	if action != "delete" {
+		valuesJson, err := json.Marshal(doc)
+		if err != nil {
+			return err
+		}
+		parts = append(parts, valuesJson)
 	}
 
-	// Header, values and final delimeter is separated by newlines
-	entry := bytes.Join([][]byte{headerJson, valuesJson, nil}, []byte{newline})
+	// Header, values (in case they exist) and final delimeter is separated by newlines
+	parts = append(parts, nil)
+	entry := bytes.Join(parts, []byte{newline})
 	_, err = (*bulk).Write(entry)
 
 	return err

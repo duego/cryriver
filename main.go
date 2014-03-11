@@ -77,11 +77,7 @@ func main() {
 		}
 		for op := range mongoc {
 			// Wrap all mongo operations to comply with ES interface, then send them off to the slurper.
-			esOp := &mongodb.EsOperation{
-				Operation:    op,
-				Manipulators: mongodb.DefaultManipulators,
-				IndexMap:     indexes,
-			}
+			esOp := mongodb.NewEsOperation(indexes, nil, op)
 			select {
 			case esc <- esOp:
 				lastEsSeenC <- &op.Timestamp
