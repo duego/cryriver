@@ -53,7 +53,7 @@ func Tail(server, ns string, initial bool, lastTs *Timestamp, opc chan<- *Operat
 		initialDone := make(chan bool)
 		go func() {
 			log.Println("Doing initial import, this may take a while...")
-			count := 0
+			var count uint64
 			for {
 				var result bson.M
 				if iter.Next(&result) {
