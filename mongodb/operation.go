@@ -157,11 +157,6 @@ func (op *EsOperation) Document() (map[string]interface{}, error) {
 
 	switch op.Op {
 	case Update:
-		// Partial update
-		if v, ok := op.Object["$set"]; ok {
-			changes = v.(bson.M)
-			break
-		}
 		if _, ok := op.Object["$unset"]; ok {
 			// TODO: Return an ES script that unsets the fields instead of re-index the whole object.
 			// For now we will fetch the full object to make sure no additional fields is kept around.
@@ -174,8 +169,15 @@ func (op *EsOperation) Document() (map[string]interface{}, error) {
 				return nil, err
 			}
 			object := bson.M{}
-			op.session.DB(db).C(col).FindId(id).One(&object)
+			if err := op.session.DB(db).C(col).FindId(id).One(&object); err != nil {
+				return nil, err
+			}
 			changes = object
+			break
+		}
+		// Partial update
+		if v, ok := op.Object["$set"]; ok {
+			changes = v.(bson.M)
 			break
 		}
 		// All other updates is a full document(?)

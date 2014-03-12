@@ -96,7 +96,7 @@ func Tail(session *mgo.Session, ns string, initial bool, lastTs *Timestamp, opc 
 	if lastTs == nil || int64(*lastTs) == 0 {
 		return errors.New("Unknown oplog timestamp, you probably want to run initial import first.")
 	}
-	log.Println("Resuming oplog from timestamp:", *lastTs)
+	log.Println("Resuming oplog from timestamp:", *lastTs, "starting initial cursor might take a while...")
 	query := bson.M{"ns": ns, "ts": bson.M{"$gt": *lastTs}}
 
 	// Start tailing, sorted by forward natural order by default in capped collections.
