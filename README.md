@@ -1,4 +1,4 @@
-# [CryRiver](http://www.youtube.com/watch?v=DksSPZTZES0)
+# [CryRiver](http://www.youtube.com/watch?v=DksSPZTZES0) [![GoDoc](https://godoc.org/github.com/duego/cryriver?status.png)](https://godoc.org/github.com/duego/cryriver)
 
 This is an evaluation on creating our own river to make a better understanding of the mechanics of running it and fixing it when it breaks.
 
