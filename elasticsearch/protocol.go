@@ -98,12 +98,13 @@ func (bulk *BulkBody) Add(v BulkEntry) error {
 	if err != nil {
 		return err
 	}
+
+	// No need to send operations that wouldn't change anything
+	if len(doc) == 0 {
+		return nil
+	}
 	// Updates needs to be wrapped with additional options
 	if action == "update" {
-		// No need to send meaningless operations
-		if len(doc) == 0 {
-			return errors.New("Empty document, nothing would get changed!")
-		}
 		doc = map[string]interface{}{
 			"doc":           doc,
 			"doc_as_upsert": true,

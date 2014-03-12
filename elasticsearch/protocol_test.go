@@ -119,7 +119,9 @@ func TestBulkDone(t *testing.T) {
 		"testing",
 		"user",
 		"123",
-		map[string]interface{}{},
+		map[string]interface{}{
+			"foo": "bar",
+		},
 	}
 	bulk.Add(&stuff)
 	if bulk.Len() == 0 {
