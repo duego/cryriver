@@ -8,22 +8,22 @@ import (
 	"time"
 )
 
-var lastEsSeen *mongodb.Timestamp
-var lastEsSeenC = make(chan *mongodb.Timestamp, 1)
+var (
+	lastEsSeen     *mongodb.Timestamp
+	lastEsSeenC    = make(chan *mongodb.Timestamp, 1)
+	lastEsSeenStat = expvar.NewString("Last optime seen")
+)
 
 func init() {
 	// Restore any previously saved timestamp
+	lastEsSeen = new(mongodb.Timestamp)
 	if f, err := os.Open(*optimeStore); err != nil {
 		log.Println("Failed to load previous lastEsSeen timestamp:", err)
 	} else {
-		lastEsSeen = new(mongodb.Timestamp)
 		lastEsSeen.Load(f)
 		f.Close()
 	}
 	go saveLastEsSeen()
-
-	// Expose and keep track of what the latest timestamp we've forwarded to ES is
-	expvar.Publish("lastEsSeen", lastEsSeen)
 }
 
 // saveLastEsSeen loops the channel to save our progress on what timestamp we have seen so far.
@@ -43,9 +43,11 @@ func saveLastEsSeen() {
 					log.Println("Error saving oplog timestamp:", err)
 				}
 				f.Close()
+				lastEsSeenStat.Set(lastEsSeen.String())
 				lastEsSeen = nil
 			}
 		case lastEsSeen = <-lastEsSeenC:
+			log.Println("set new seen addr")
 		}
 	}
 }
