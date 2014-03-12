@@ -6,7 +6,7 @@ import (
 	"errors"
 )
 
-type ByteSize float64
+type ByteSize int64
 
 const (
 	_           = iota
@@ -29,7 +29,7 @@ var BulkBodyFull = errors.New("No more operations can be added")
 // BulkBody creates valid bulk data to be used by ES _bulk requests.
 // http://www.elasticsearch.org/guide/en/elasticsearch/reference/current/docs-bulk.html
 type BulkBody struct {
-	bytes.Buffer
+	*bytes.Buffer
 	max  ByteSize
 	done bool
 }
@@ -44,7 +44,10 @@ type indexHeader struct {
 // NewBulkBody will return a new BulkBody configured to return an error upon adding more bytes than
 // max.
 func NewBulkBody(max ByteSize) *BulkBody {
-	return &BulkBody{max: max}
+	return &BulkBody{
+		Buffer: bytes.NewBuffer(make([]byte, 0, max)),
+		max:    max,
+	}
 }
 
 // Add will write one new bulk operation to the buffer. Returns BulkBodyFull when maxed out.
