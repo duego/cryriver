@@ -103,7 +103,7 @@ func Slurp(client BulkSender, esc chan Transaction) {
 			switch err {
 			case nil:
 			case BulkBodyFull:
-				log.Println("Bulk body full!")
+				bulkFull.Add(1)
 				if err := client.BulkSend(bulkBuf); err != nil {
 					log.Println(err)
 					// XXX: There is no limit on the amount of pending go routines doing it like this
@@ -115,7 +115,7 @@ func Slurp(client BulkSender, esc chan Transaction) {
 			}
 		case <-bulkTicker.C:
 			if bulkBuf.Len() > 0 {
-				log.Println("It is time!")
+				bulkTime.Add(1)
 				if err := client.BulkSend(bulkBuf); err != nil {
 					log.Println(err)
 				}
