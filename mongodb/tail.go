@@ -101,18 +101,30 @@ func Tail(session *mgo.Session, ns string, initial bool, lastTs *Timestamp, opc 
 
 	// Start tailing, sorted by forward natural order by default in capped collections.
 	iter := col.Find(query).Tail(-1)
+	iterClosed := make(chan bool)
 	go func() {
 		for {
 			var result Operation
 			if iter.Next(&result) {
-				opc <- &result
+				select {
+				case opc <- &result:
+				case <-exit:
+					break
+				}
 			} else {
 				break
 			}
 		}
+		close(iterClosed)
 	}()
 
 	// Block until we are supposed to exit, close the iterator when that happens
-	<-exit
-	return iter.Close()
+	select {
+	case <-exit:
+	case <-iterClosed:
+	}
+	err := iter.Close()
+	// Make sure iterator has stoped pumping into opc since it will be closed on defered func
+	<-iterClosed
+	return err
 }
