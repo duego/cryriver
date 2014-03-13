@@ -1,7 +1,6 @@
 package mongodb
 
 import (
-	"fmt"
 	"labix.org/v2/mgo/bson"
 	"testing"
 	"time"
@@ -104,16 +103,12 @@ func TestUpdateOperationSet(t *testing.T) {
 
 func getEsOp(op *Operation) *EsOperation {
 	indexes := map[string]string{
-		*db: *db,
+		"test": "test",
 	}
-	return NewEsOperation(session, indexes, nil, op)
+	return NewEsOperation(indexes, nil, op)
 }
 
 func TestEsOperation(t *testing.T) {
-	if !*integration {
-		t.Skip()
-	}
-
 	// Update with full object
 	op := bsonToOperation(t, &bson.M{
 		//  2014-01-28 16:23:1q3 +0000 UTC
@@ -121,7 +116,7 @@ func TestEsOperation(t *testing.T) {
 		"h":  int64(-9122761770815979503),
 		"v":  2,
 		"op": "u",
-		"ns": fmt.Sprintf("%s.conversations", *db),
+		"ns": "test.conversations",
 		"o": map[string]interface{}{
 			"_cls":       "Conversation",
 			"_id":        bson.ObjectIdHex("50eadae392cd864e50cd0dbc"),
@@ -147,31 +142,13 @@ func TestEsOperation(t *testing.T) {
 }
 
 func TestEsOperationUnsetSet(t *testing.T) {
-	if !*integration {
-		t.Skip()
-	}
-
-	initSession()
-	col := session.DB(*db).C("conversations")
-	stored := bson.M{
-		"_id":    bson.ObjectIdHex("50eadae392cd864e50cd0dbc"),
-		"alias":  "Johnny",
-		"foo":    "bar",
-		"fooboo": "barbar",
-	}
-	if err := col.Insert(stored); err != nil {
-		t.Error(err)
-	}
-	defer col.RemoveAll(nil)
-
-	// Update with full object
 	op := bsonToOperation(t, &bson.M{
 		//  2014-01-28 16:23:1q3 +0000 UTC
 		"ts": bson.MongoTimestamp(5973982510084788956),
 		"h":  int64(-9122761770815979503),
 		"v":  2,
 		"op": "u",
-		"ns": fmt.Sprintf("%s.conversations", *db),
+		"ns": "test.conversations",
 		"o": map[string]interface{}{
 			"$set": map[string]interface{}{
 				"alias": "Hello",
@@ -186,16 +163,21 @@ func TestEsOperationUnsetSet(t *testing.T) {
 	})
 
 	esOp := getEsOp(op)
-	// Since we get an $unset we will treat it as an index and get the full object from mongo
-	if a, _ := esOp.Action(); a != "index" {
+	if a, _ := esOp.Action(); a != "update" {
 		t.Error("Unexpected action", a)
 	}
+
 	d, err := esOp.Document()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(d) != len(stored) {
-		t.Error("Expected to get full object from mongodb back got:", d)
+
+	if len(d) != 2 {
+		t.Error("Incorrect number of fields in:", d)
+	}
+	// Since we got an $unset we will treat that one as a $set with null value
+	if v, ok := d["foo"]; !ok || v != nil {
+		t.Error("Expected foo to be nil")
 	}
 }
 

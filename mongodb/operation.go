@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"github.com/duego/cryriver/stats"
-	"labix.org/v2/mgo"
 	"labix.org/v2/mgo/bson"
 	"strings"
 	"time"
@@ -85,10 +84,9 @@ type EsOperation struct {
 	namespaceSplit *[2]string
 	doc            map[string]interface{}
 	action         string
-	session        *mgo.Session
 }
 
-func NewEsOperation(session *mgo.Session, indexes map[string]string, manips []Manipulator, op *Operation) *EsOperation {
+func NewEsOperation(indexes map[string]string, manips []Manipulator, op *Operation) *EsOperation {
 	if manips == nil {
 		manips = DefaultManipulators
 	}
@@ -96,7 +94,6 @@ func NewEsOperation(session *mgo.Session, indexes map[string]string, manips []Ma
 		Operation:    op,
 		manipulators: manips,
 		indexMap:     indexes,
-		session:      session,
 	}
 
 	// Return delete operation if object delete == true.
@@ -131,12 +128,7 @@ func (op *EsOperation) Action() (string, error) {
 	}
 	switch op.Op {
 	case Update:
-		// Treat $unset as index operations for now to reduce complexity
-		if _, ok := op.Object["$unset"]; ok {
-			op.action = "index"
-		} else {
-			op.action = "update"
-		}
+		op.action = "update"
 	case Insert:
 		op.action = "index"
 	case Delete:
@@ -158,33 +150,30 @@ func (op *EsOperation) Document() (map[string]interface{}, error) {
 
 	switch op.Op {
 	case Update:
-		if _, ok := op.Object["$unset"]; ok {
-			// TODO: Return an ES script that unsets the fields instead of re-index the whole object.
-			// For now we will fetch the full object to make sure no additional fields is kept around.
-			db, col, err := op.nsSplit()
-			if err != nil {
-				return nil, err
-			}
-			id, err := op.ObjectId()
-			if err != nil {
-				return nil, err
-			}
-			object := bson.M{}
-			if err := op.session.DB(db).C(col).FindId(id).One(&object); err != nil {
-				return nil, err
-			}
-			changes = object
-			stats.Finds.Add(1)
-			break
-		}
 		// Partial update
-		if v, ok := op.Object["$set"]; ok {
-			changes = v.(bson.M)
+		sets, ok := op.Object["$set"]
+		if ok {
+			stats.Sets.Add(1)
+		}
+		if unsets, ok := op.Object["$unset"]; ok {
+			// Instead of having to find the full object in MongoDB or passing a script to ES
+			// we pretend there's a $set with null value which is enough in most cases.
+			stats.Unsets.Add(1)
+			if sets == nil {
+				sets = make(bson.M)
+			}
+			for key, _ := range unsets.(bson.M) {
+				sets.(bson.M)[key] = nil
+			}
+		}
+		if sets != nil {
+			changes = sets.(bson.M)
 			break
 		}
 		// All other updates is a full document(?)
 		fallthrough
 	case Insert:
+		stats.Complete.Add(1)
 		changes = bson.M(op.Object)
 	default:
 		return nil, OperationError{"Unsupported operation", op}

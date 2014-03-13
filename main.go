@@ -58,7 +58,7 @@ func main() {
 	mongoErr := make(chan error)
 	exit := make(chan bool)
 	go func() {
-		mongoErr <- mongodb.Tail(mgoSession.New(), *ns, *mongoInitial, lastEsSeen, mongoc, exit)
+		mongoErr <- mongodb.Tail(mgoSession, *ns, *mongoInitial, lastEsSeen, mongoc, exit)
 	}()
 
 	esc := make(chan elasticsearch.Transaction)
@@ -88,7 +88,7 @@ func main() {
 		}
 		for op := range mongoc {
 			// Wrap all mongo operations to comply with ES interface, then send them off to the slurper.
-			esOp := mongodb.NewEsOperation(mgoSession, indexes, nil, op)
+			esOp := mongodb.NewEsOperation(indexes, nil, op)
 			select {
 			case esc <- esOp:
 				lastEsSeenC <- &op.Timestamp
