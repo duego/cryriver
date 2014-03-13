@@ -47,7 +47,6 @@ func saveLastEsSeen() {
 				lastEsSeen = nil
 			}
 		case lastEsSeen = <-lastEsSeenC:
-			log.Println("set new seen addr")
 		}
 	}
 }

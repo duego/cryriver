@@ -4,6 +4,7 @@ package elasticsearch
 import (
 	"errors"
 	"fmt"
+	"github.com/duego/cryriver/stats"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -103,7 +104,7 @@ func Slurp(client BulkSender, esc chan Transaction) {
 			switch err {
 			case nil:
 			case BulkBodyFull:
-				bulkFull.Add(1)
+				stats.BulkFull.Add(1)
 				if err := client.BulkSend(bulkBuf); err != nil {
 					log.Println(err)
 					// XXX: There is no limit on the amount of pending go routines doing it like this
@@ -115,7 +116,7 @@ func Slurp(client BulkSender, esc chan Transaction) {
 			}
 		case <-bulkTicker.C:
 			if bulkBuf.Len() > 0 {
-				bulkTime.Add(1)
+				stats.BulkTime.Add(1)
 				if err := client.BulkSend(bulkBuf); err != nil {
 					log.Println(err)
 				}

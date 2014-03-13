@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/duego/cryriver/stats"
 	"labix.org/v2/mgo"
 	"labix.org/v2/mgo/bson"
 	"strings"
@@ -173,6 +174,7 @@ func (op *EsOperation) Document() (map[string]interface{}, error) {
 				return nil, err
 			}
 			changes = object
+			stats.Finds.Add(1)
 			break
 		}
 		// Partial update
