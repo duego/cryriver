@@ -27,10 +27,15 @@ var (
 	optimeStore   = flag.String("db", "/tmp/cryriver.db", "What file to save progress on for oplog resumes")
 	ns            = flag.String("ns", "api.users", "The namespace to tail on")
 	debugAddr     = flag.String("debug", "127.0.0.1:5000", "Which address to listen on for debug, empty for no debug")
+	numCpu        = flag.Int("cpu", 0, "Maximum number of parallell tasks to do, defaults to number of available CPUs")
 )
 
 func main() {
-	runtime.GOMAXPROCS(runtime.NumCPU())
+	if *numCpu > 0 {
+		runtime.GOMAXPROCS(*numCpu)
+	} else {
+		runtime.GOMAXPROCS(runtime.NumCPU())
+	}
 	flag.Parse()
 	log.SetFlags(log.Lshortfile | log.LstdFlags)
 
