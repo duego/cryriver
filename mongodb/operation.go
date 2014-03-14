@@ -181,7 +181,7 @@ func (op *EsOperation) Document() (map[string]interface{}, error) {
 
 	// Run the document through the manipulators to make it look like we want it to before it hits ES
 	for _, manip := range op.manipulators {
-		if err := manip.Manipulate(&changes); err != nil {
+		if err := manip.Manipulate(&changes, op.Op); err != nil {
 			return nil, err
 		}
 	}
@@ -226,14 +226,14 @@ func (op *EsOperation) Time() *time.Time {
 // Manipulator is used for changing documents in specific ways. These can get added to
 // the EsOperation to have changes applied on all mapped operations.
 type Manipulator interface {
-	Manipulate(doc *bson.M) error
+	Manipulate(doc *bson.M, op OplogOperation) error
 }
 
 // ManipulateFunc makes a function into a Manipulator
-type ManipulateFunc func(doc *bson.M) error
+type ManipulateFunc func(doc *bson.M, op OplogOperation) error
 
-func (m ManipulateFunc) Manipulate(doc *bson.M) error {
-	return m(doc)
+func (m ManipulateFunc) Manipulate(doc *bson.M, op OplogOperation) error {
+	return m(doc, op)
 }
 
 var DefaultManipulators = make([]Manipulator, 0, 100)
