@@ -16,11 +16,13 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 )
 
 var (
 	mongoServer   = flag.String("mongo", "localhost", "Specific server to tail")
 	mongoInitial  = flag.Bool("initial", false, "True if we want to do initial sync from the full collection, otherwise resume reading oplog")
+	mongoTimeout  = flag.Int("timeout", 1, "Minutes to wait before timing out reading operations from MongoDB")
 	esServer      = flag.String("es", "http://localhost:9200", "Elasticsearch server to index to")
 	esConcurrency = flag.Int("concurrency", 1, "Maximum number of simultaneous ES connections")
 	esIndex       = flag.String("index", "testing", "Elasticsearch index to use")
@@ -49,7 +51,7 @@ func main() {
 	interrupt := make(chan os.Signal)
 	signal.Notify(interrupt, os.Interrupt, syscall.SIGTERM)
 
-	mgoSession, err := mgo.Dial(*mongoServer + "?connect=direct")
+	mgoSession, err := mgo.DialWithTimeout(*mongoServer+"?connect=direct", time.Duration(*mongoTimeout)*time.Minute)
 	if err != nil {
 		log.Fatal(err)
 	}
