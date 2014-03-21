@@ -103,9 +103,10 @@ func (bulk *BulkBody) Add(v BulkEntry) error {
 	}
 
 	// No need to send operations that wouldn't change anything
-	if len(doc) == 0 {
+	if action != "delete" && len(doc) == 0 {
 		return nil
 	}
+
 	// Updates needs to be wrapped with additional options
 	if action == "update" {
 		doc = map[string]interface{}{
