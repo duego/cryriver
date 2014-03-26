@@ -31,9 +31,14 @@ func Tail(session *mgo.Session, ns string, initial bool, lastTs *Timestamp, opc 
 	defer close(opc)
 	defer session.Close()
 
+	// Always do initial import in case a previous optime doesn't exist.
+	if lastTs == nil || int64(*lastTs) == 0 {
+		initial = true
+	}
+
 	if initial {
 		// If we are doing an intitial import, replace the oplog timestamp with the most current
-		// as it doesn't make sense to apply the same objects multple times.
+		// as it doesn't make sense to apply the same objects multiple times.
 		if ts, err := Optime(session); err != nil {
 			return err
 		} else {
@@ -91,12 +96,8 @@ func Tail(session *mgo.Session, ns string, initial bool, lastTs *Timestamp, opc 
 	// Start tailing oplog
 	col := session.DB("local").C("oplog.rs")
 
-	// Avoid issue where we blindly start tailing all oplog, either we should have gotten it from
-	// initial import or the one previously saved to disk.
-	if lastTs == nil || int64(*lastTs) == 0 {
-		return errors.New("Unknown oplog timestamp, you probably want to run initial import first.")
-	}
-	log.Println("Resuming oplog from timestamp:", *lastTs, "starting initial cursor might take a while...")
+	log.Println("Resuming oplog from timestamp:", *lastTs)
+	log.Println("It could take a moment for MongoDB to scan through the oplog collection...")
 	query := bson.M{"ns": ns, "ts": bson.M{"$gt": *lastTs}}
 
 	// Start tailing, sorted by forward natural order by default in capped collections.
