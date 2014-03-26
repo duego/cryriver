@@ -21,7 +21,7 @@ import (
 
 var (
 	mongoServer   = flag.String("mongo", "localhost", "Specific server to tail")
-	mongoInitial  = flag.Bool("initial", false, "True if we want to do initial sync from the full collection, otherwise resume reading oplog")
+	mongoInitial  = flag.Bool("initial", false, "True if we want to force initial sync from the full collection, otherwise resume reading oplog if possible")
 	mongoTimeout  = flag.Int("timeout", 1, "Minutes to wait before timing out reading operations from MongoDB")
 	esServer      = flag.String("es", "http://localhost:9200", "Elasticsearch server to index to")
 	esConcurrency = flag.Int("concurrency", 1, "Maximum number of simultaneous ES connections")
